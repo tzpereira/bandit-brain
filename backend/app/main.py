@@ -1,11 +1,11 @@
 from fastapi import FastAPI
+from app.routes.experiments import router as experiments_router
+from app.routes.allocations import router as allocations_router
 
 app = FastAPI()
 
-
-@app.get("/health")
-def health_check():
-	return {"status": "ok"}
+app.include_router(experiments_router)
+app.include_router(allocations_router)
 
 if __name__ == "__main__":
 	import uvicorn
