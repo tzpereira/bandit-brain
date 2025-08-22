@@ -1,0 +1,129 @@
+import time
+import random
+import requests
+from datetime import datetime
+import argparse
+
+# -----------------------------
+# Experiment Configuration
+# -----------------------------
+EXPERIMENT_NAME = "AB_Test_Pages"
+VARIANTS = ["Page_A", "Page_B", "Page_C"]
+
+# Base Click-Through Rate (CTR) by Variant
+BASE_CTR = {
+    "Page_A": 0.05,
+    "Page_B": 0.06, 
+    "Page_C": 0.04
+}
+
+# Possible Contexts
+DEVICES = ["desktop", "mobile", "tablet"]
+LOCATIONS = ["US", "CA", "BR", "FR", "DE"]
+USER_SEGMENTS = ["new_user", "returning_user", "vip"]
+
+parser = argparse.ArgumentParser(description="Streaming data simulator for MAB")
+parser.add_argument("--max_events", type=int, default=None, help="Maximum number of events to send")
+parser.add_argument("--batch_size", type=int, default=1, help="Batch size of events per request")
+parser.add_argument("--interval", type=float, default=0.05, help="Interval between batches (seconds)")
+parser.add_argument("--api_url", type=str, default="http://localhost:8000/ingest", help="Ingestion API URL")
+args = parser.parse_args()
+
+EVENT_INTERVAL = args.interval
+API_URL = args.api_url
+MAX_EVENTS = args.max_events
+BATCH_SIZE = args.batch_size
+
+# -----------------------------
+# Function to simulate CTR with context
+# -----------------------------
+def simulate_click(variant, device, segment, hour):
+    """
+    Returns 1 if there was a click, 0 otherwise.
+    CTR varies by variant, device, segment, and hour of the day.
+    """
+    ctr = BASE_CTR[variant]
+
+    # Adjustment by device
+    if device == "mobile":
+        ctr *= 1.1
+    elif device == "tablet":
+        ctr *= 0.9
+
+    # Adjustment by segment
+    if segment == "vip":
+        ctr *= 1.5
+    elif segment == "new_user":
+        ctr *= 0.8
+
+    # Adjustment by hour of the day (peaks 18h-21h)
+    if 18 <= hour <= 21:
+        ctr *= 1.2
+    elif 0 <= hour <= 6:
+        ctr *= 0.7
+
+    return 1 if random.random() < ctr else 0
+
+# -----------------------------
+
+# Event loop with stop option and batch
+event_count = 0
+headers = {"Content-Type": "application/json"}
+while True:
+    batch = []
+    batch_time = datetime.now()
+    for _ in range(BATCH_SIZE):
+        if MAX_EVENTS is not None and event_count >= MAX_EVENTS:
+            break
+        variant = random.choice(VARIANTS)
+        device = random.choice(DEVICES)
+        location = random.choice(LOCATIONS)
+        segment = random.choice(USER_SEGMENTS)
+        current_time = datetime.now()
+        hour = current_time.hour
+        event_date = current_time.date().isoformat()
+        impressions = 1
+        clicks = simulate_click(variant, device, segment, hour)
+        payload = {
+            "experiment_name": EXPERIMENT_NAME,
+            "variant_name": variant,
+            "impressions": impressions,
+            "clicks": clicks,
+            "event_date": event_date,
+            "context": {
+                "device": device,
+                "location": location,
+                "user_segment": segment,
+                "hour": hour
+            }
+        }
+        batch.append(payload)
+        event_count += 1
+
+    if not batch:
+        break
+
+    # Send batch to API
+    try:
+        if BATCH_SIZE == 1:
+            response = requests.post(API_URL, json=batch[0], headers=headers)
+        else:
+            # Send batch as a list
+            response = requests.post(API_URL, json=batch, headers=headers)
+            if response.status_code == 200:
+                print(f"[{batch_time}] Batch sent: {batch}")
+            else:
+                    print(f"[{batch_time}] ERROR sending: {response.status_code} | Response: {response.text}")
+            continue
+        if response.status_code == 200:
+            print(f"[{batch_time}] Batch sent: {batch}")
+        else:
+            print(f"[{batch_time}] ERROR sending: {response.status_code} | Response: {response.text}")
+    except Exception as e:
+        print(f"[{batch_time}] EXCEPTION: {e}")
+
+    if MAX_EVENTS is not None and event_count >= MAX_EVENTS:
+        print(f"Simulation ended after {event_count} events.")
+        break
+
+    time.sleep(EVENT_INTERVAL)
