@@ -1,14 +1,18 @@
 from fastapi import FastAPI
 
-from app.routes.experiments import experiments_router as experiments_router
-from app.routes.experiments import ingest_router as ingest_router
-from app.routes.allocations import router as allocations_router
+from app.routes.get.experiments import router as get_experiments_router
+from app.routes.post.ingest import router as ingest_experiments_router
+from app.routes.get.allocations import router as get_allocations_router
 
 app = FastAPI()
 
-app.include_router(experiments_router)
-app.include_router(allocations_router)
-app.include_router(ingest_router)
+# Experiment routes
+app.include_router(get_experiments_router)
+app.include_router(ingest_experiments_router)
+
+# Allocation routes
+app.include_router(get_allocations_router)
+
 
 if __name__ == "__main__":
 	import uvicorn
