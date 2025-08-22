@@ -7,8 +7,7 @@ CREATE TABLE IF NOT EXISTS experiments (
     clicks INT NOT NULL CHECK (clicks >= 0),
     event_date DATE NOT NULL,
     context JSONB,
-    created_at TIMESTAMP DEFAULT NOW(),
-    CONSTRAINT unique_exp_variant_date UNIQUE (experiment_name, variant_name, event_date)
+    created_at TIMESTAMP DEFAULT NOW()
 );
 
 -- Indexes for quick queries

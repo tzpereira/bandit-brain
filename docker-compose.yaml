@@ -25,7 +25,6 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
       - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
-      - ./db/seeds.sql:/docker-entrypoint-initdb.d/seeds.sql
     networks:
       - bandit-net
 

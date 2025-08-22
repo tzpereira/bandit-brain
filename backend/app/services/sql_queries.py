@@ -1,7 +1,6 @@
 INSERT_EXPERIMENT = '''
 INSERT INTO experiments (experiment_name, variant_name, impressions, clicks, event_date, context)
-VALUES (%s, %s, %s, %s, %s, %s)
-ON CONFLICT (experiment_name, variant_name, event_date) DO NOTHING;
+VALUES (%s, %s, %s, %s, %s, %s);
 '''
 
 SELECT_EXPERIMENTS = '''

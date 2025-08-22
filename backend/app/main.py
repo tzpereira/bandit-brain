@@ -1,11 +1,10 @@
 from fastapi import FastAPI
 
-from app.routes.experiments import router as experiments_router
+from app.routes.experiments import experiments_router as experiments_router
+from app.routes.experiments import ingest_router as ingest_router
 from app.routes.allocations import router as allocations_router
-from app.routes.ingest import router as ingest_router
 
 app = FastAPI()
-
 
 app.include_router(experiments_router)
 app.include_router(allocations_router)
