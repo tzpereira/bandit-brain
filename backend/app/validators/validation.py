@@ -31,3 +31,16 @@ def validate_non_negative_float(value: float, field_name: str) -> int:
     if not isinstance(value, float) or value < 0.0:
         raise ValueError(f"{field_name} must be a non-negative float.")
     return value
+
+def validate_algorithm(value: str, field_name: str = "method") -> str:
+    """Checks if the algorithm is one of the allowed values."""
+    allowed = ["eg", "ucb", "ts", "softmax"]
+    if not isinstance(value, str) or value not in allowed:
+        raise ValueError(f"{field_name} must be one of: {', '.join(allowed)}.")
+    return value
+
+def validate_epsilon(value: float, field_name: str = "epsilon") -> float:
+    """Validates if epsilon is between 0 and 1."""
+    if not isinstance(value, float) or not (0.0 <= value <= 1.0):
+        raise ValueError(f"{field_name} must be a float between 0 and 1.")
+    return value

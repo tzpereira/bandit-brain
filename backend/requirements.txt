@@ -1,4 +1,5 @@
 fastapi
+numpy
 uvicorn
 psycopg2-binary
 pydantic
