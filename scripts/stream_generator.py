@@ -105,16 +105,8 @@ while True:
 
     # Send batch to API
     try:
-        if BATCH_SIZE == 1:
-            response = requests.post(API_URL, json=batch[0], headers=headers)
-        else:
-            # Send batch as a list
-            response = requests.post(API_URL, json=batch, headers=headers)
-            if response.status_code == 200:
-                print(f"[{batch_time}] Batch sent: {batch}")
-            else:
-                    print(f"[{batch_time}] ERROR sending: {response.status_code} | Response: {response.text}")
-            continue
+        # Always send as a list, even if batch_size == 1
+        response = requests.post(API_URL, json=batch, headers=headers)
         if response.status_code == 200:
             print(f"[{batch_time}] Batch sent: {batch}")
         else:
