@@ -2,3 +2,4 @@ backend/.venv/
 __pycache__/
 .env
 scripts/.venv/
+experimentation/
