@@ -10,6 +10,7 @@ router = APIRouter()
 class MetricsQuery(BaseModel):
     experiment_name: Optional[str] = None
     date: Optional[str] = None
+    group_by_context: Optional[bool] = False
 
 @router.get("/metrics", response_model=List[Metric])
 def get_metrics(query: MetricsQuery = MetricsQuery()):
@@ -21,7 +22,8 @@ def get_metrics(query: MetricsQuery = MetricsQuery()):
     else:
         metrics = get_experiments_metrics(
             experiment_name=query.experiment_name,
-            date=query.date
+            date=query.date,
+            group_by_context=query.group_by_context
         )
     if not metrics:
         raise HTTPException(status_code=404, detail="No metrics found")

@@ -50,7 +50,8 @@ def get_experiments(
 
 def get_experiments_metrics(
     experiment_name: Optional[str] = None,
-    date: Optional[str] = None
+    date: Optional[str] = None,
+    group_by_context: bool = False
 ) -> List[Metric]:
     """
     Retrieve aggregated metrics for experiments, optionally filtered by experiment_name and date.
@@ -58,19 +59,35 @@ def get_experiments_metrics(
     conn = get_db_connection()
     cur = conn.cursor()
 
-    query = '''
+    if group_by_context:
+        group_fields = "variant_name, context->>'device', context->>'location', context->>'user_segment'"
+        select_fields = """
+            variant_name,
+            COALESCE(context->>'device', 'unknown') AS device,
+            COALESCE(context->>'location', 'unknown') AS location,
+            COALESCE(context->>'user_segment', 'unknown') AS user_segment,
+        """
+        order_fields = "variant_name, device, location, user_segment"
+    else:
+        group_fields = "variant_name"
+        select_fields = """
+            variant_name,
+            'all' AS device,
+            'all' AS location,
+            'all' AS user_segment,
+        """
+        order_fields = "variant_name"
+
+    query = f'''
         WITH agg AS (
             SELECT
-                variant_name,
-                COALESCE(context->>'device', 'unknown') AS device,
-                COALESCE(context->>'location', 'unknown') AS location,
-                COALESCE(context->>'user_segment', 'unknown') AS user_segment,
+                {select_fields}
                 SUM(clicks) AS clicks,
                 SUM(cost) AS total_cost,
                 SUM(impressions) AS impressions
             FROM experiments
-            {where_clause}
-            GROUP BY variant_name, context->>'device', context->>'location', context->>'user_segment'
+            {{where_clause}}
+            GROUP BY {group_fields}
         )
         SELECT
             variant_name,
@@ -93,7 +110,7 @@ def get_experiments_metrics(
                 (clicks::float / impressions) + 1.96 * SQRT((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions)
             ELSE 0 END AS ctr_ci_upper
         FROM agg
-        ORDER BY variant_name, device, location, user_segment;
+        ORDER BY {order_fields};
     '''
 
     params = []
