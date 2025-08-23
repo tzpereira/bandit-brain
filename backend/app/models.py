@@ -28,6 +28,9 @@ class Metric(BaseModel):
     device: str
     location: str
     user_segment: str
-    ctr: float
     cpc: Optional[float] = None
     cpv: Optional[float] = None
+    ctr: float
+    ctr_se: float
+    ctr_ci_lower: float
+    ctr_ci_upper: float

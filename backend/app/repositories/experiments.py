@@ -53,28 +53,49 @@ def get_experiments_metrics(
     date: Optional[str] = None
 ) -> List[Metric]:
     """
-    Returns aggregated metrics (impressions, clicks, CTR, cost, CPC, CPV) for each variant and context (device, location, user_segment), with optional filters.
-    Fills missing context fields with 'unknown'.
-    Returns a list of dicts: variant_name, device, location, user_segment, impressions, clicks, ctr, cost, cpc, cpv.
-    Assumes 'cost' is present as a column in the experiments table.
+    Retrieve aggregated metrics for experiments, optionally filtered by experiment_name and date.
     """
     conn = get_db_connection()
     cur = conn.cursor()
 
     query = '''
+        WITH agg AS (
+            SELECT
+                variant_name,
+                COALESCE(context->>'device', 'unknown') AS device,
+                COALESCE(context->>'location', 'unknown') AS location,
+                COALESCE(context->>'user_segment', 'unknown') AS user_segment,
+                SUM(clicks) AS clicks,
+                SUM(cost) AS total_cost,
+                SUM(impressions) AS impressions
+            FROM experiments
+            {where_clause}
+            GROUP BY variant_name, context->>'device', context->>'location', context->>'user_segment'
+        )
         SELECT
             variant_name,
-            SUM(clicks) AS clicks,
-            SUM(cost) AS total_cost,
-            SUM(impressions) AS impressions,
-            COALESCE(context->>'device', 'unknown') AS device,
-            COALESCE(context->>'location', 'unknown') AS location,
-            COALESCE(context->>'user_segment', 'unknown') AS user_segment,
-            CASE WHEN SUM(impressions) > 0 THEN CAST(SUM(clicks) AS FLOAT) / SUM(impressions) ELSE 0 END AS ctr,
-            CASE WHEN SUM(clicks) > 0 THEN SUM(cost) / SUM(clicks) ELSE NULL END AS cpc,
-            CASE WHEN SUM(impressions) > 0 THEN SUM(cost) / SUM(impressions) ELSE NULL END AS cpv
-        FROM experiments
+            clicks,
+            total_cost,
+            impressions,
+            device,
+            location,
+            user_segment,
+            CASE WHEN clicks > 0 THEN total_cost / clicks ELSE NULL END AS cpc,
+            CASE WHEN impressions > 0 THEN total_cost / impressions ELSE NULL END AS cpv,
+            CASE WHEN impressions > 0 THEN clicks::float / impressions ELSE 0 END AS ctr,
+            CASE WHEN impressions > 0 THEN
+                SQRT((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions)
+            ELSE 0 END AS ctr_se,
+            CASE WHEN impressions > 0 THEN
+                GREATEST((clicks::float / impressions) - 1.96 * SQRT((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions), 0)
+            ELSE 0 END AS ctr_ci_lower,
+            CASE WHEN impressions > 0 THEN
+                (clicks::float / impressions) + 1.96 * SQRT((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions)
+            ELSE 0 END AS ctr_ci_upper
+        FROM agg
+        ORDER BY variant_name, device, location, user_segment;
     '''
+
     params = []
     where_clauses = []
 
@@ -84,14 +105,18 @@ def get_experiments_metrics(
     if date:
         where_clauses.append('event_date <= %s')
         params.append(date)
-    if where_clauses:
-        query += ' WHERE ' + ' AND '.join(where_clauses)
 
-    query += ' GROUP BY variant_name, device, location, user_segment ORDER BY variant_name, device, location, user_segment;'
+    where_clause = ''
+    if where_clauses:
+        where_clause = 'WHERE ' + ' AND '.join(where_clauses)
+
+    query = query.format(where_clause=where_clause)
+
     cur.execute(query, tuple(params))
     rows = cur.fetchall()
     cur.close()
     conn.close()
+
     metrics = [
         {
             "variant_name": row[0],
@@ -101,9 +126,12 @@ def get_experiments_metrics(
             "device": row[4],
             "location": row[5],
             "user_segment": row[6],
-            "ctr": row[7],
-            "cpc": row[8],
-            "cpv": row[9]
+            "cpc": row[7],
+            "cpv": row[8],
+            "ctr": row[9],
+            "ctr_se": row[10],
+            "ctr_ci_lower": row[11],
+            "ctr_ci_upper": row[12]
         } for row in rows
     ]
     return [Metric(**m) for m in metrics]
