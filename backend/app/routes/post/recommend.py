@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from app.models import Allocation
 from app.repositories.experiments import get_experiments_metrics
+from app.repositories.allocations import insert_allocations_batch
 from app.services.mab import EpsilonGreedyBandit, UCBBandit, ThompsonSamplingBandit, SoftmaxBandit
 from app.validators.validation import (
     validate_non_empty_string,
@@ -56,6 +57,10 @@ def recommend_allocation(request: RecommendRequest = Body(...)):
             raise HTTPException(status_code=400, detail="Invalid method. Use 'eg', 'ucb', 'ts' or 'softmax'.")
 
         allocations = bandit.get_allocation()
+
+        # Persist allocations to the database
+        insert_allocations_batch(allocations)
+
         return allocations
     except HTTPException as e:
         raise e

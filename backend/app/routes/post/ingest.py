@@ -64,7 +64,10 @@ def ingest_experiment(request: IngestBatch):
         if errors:
             raise HTTPException(status_code=422, detail={"validation_errors": errors})
         experiments = [Experiment(**obj.dict()) for obj in validated]
+
+        # Persist experiments to the database
         insert_experiments_batch(experiments)
+        
         return {"status": "success"}
     except HTTPException as e:
         raise e
