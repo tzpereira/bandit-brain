@@ -1,23 +1,28 @@
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 from app.repositories.allocations import get_allocations
 from app.models import Allocation
-from app.utils import serialize_row
+
 
 router = APIRouter()
 
 class AllocationsQuery(BaseModel):
-    limit: Optional[int] = 1000
+    experiment_name: Optional[str] = None
+    date: Optional[str] = None
+    limit: Optional[int] = None
 
 @router.get("/allocations", response_model=List[Allocation])
 def list_allocations(query: AllocationsQuery = AllocationsQuery()):
     """
-    List allocations with optional limit.
+    List allocations with optional filters: experiment_name, date, and limit.
     """
-    rows, columns = get_allocations(query.limit)
-    allocations = [Allocation(**serialize_row(row, columns)) for row in rows]
+    allocations = get_allocations(
+        experiment_name=query.experiment_name,
+        date=query.date,
+        limit=query.limit
+    )
     if not allocations:
         raise HTTPException(status_code=404, detail="No allocations found")
+    
     return allocations
