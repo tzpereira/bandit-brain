@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS experiments (
     variant_name TEXT NOT NULL,
     impressions INT NOT NULL CHECK (impressions >= 0),
     clicks INT NOT NULL CHECK (clicks >= 0),
+    cost FLOAT NOT NULL CHECK (cost >= 0),
     event_date DATE NOT NULL,
     context JSONB,
     created_at TIMESTAMP DEFAULT NOW()

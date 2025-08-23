@@ -84,12 +84,21 @@ while True:
         event_date = current_time.date().isoformat()
         impressions = 1
         clicks = simulate_click(variant, device, segment, hour)
+        
+        # Simulate a realistic cost per impression/click
+        base_cpc = 0.25 if clicks else 0.05
+        device_factor = 1.2 if device == "mobile" else (0.9 if device == "tablet" else 1.0)
+        segment_factor = 1.5 if segment == "vip" else (0.8 if segment == "new_user" else 1.0)
+        location_factor = 1.3 if location == "US" else (1.1 if location == "CA" else (0.7 if location == "BR" else 1.0))
+        cost = round(base_cpc * device_factor * segment_factor * location_factor, 4)
+
         payload = {
             "experiment_name": EXPERIMENT_NAME,
             "variant_name": variant,
             "impressions": impressions,
             "clicks": clicks,
             "event_date": event_date,
+            "cost": cost,
             "context": {
                 "device": device,
                 "location": location,

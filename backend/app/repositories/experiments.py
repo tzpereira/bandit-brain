@@ -19,7 +19,7 @@ def get_experiments(
     cur = conn.cursor()
 
     query = '''
-        SELECT id, experiment_name, variant_name, impressions, clicks, event_date, context, created_at
+        SELECT id, experiment_name, variant_name, impressions, clicks, cost, event_date, context, created_at
         FROM experiments
     '''
     params = []
@@ -53,8 +53,10 @@ def get_experiments_metrics(
     date: Optional[str] = None
 ) -> List[Metric]:
     """
-    Returns aggregated metrics (impressions, clicks, CTR) for each variant, with optional filters.
-    Returns a list of dicts: variant_name, impressions, clicks, ctr.
+    Returns aggregated metrics (impressions, clicks, CTR, cost, CPC, CPV) for each variant and context (device, location, user_segment), with optional filters.
+    Fills missing context fields with 'unknown'.
+    Returns a list of dicts: variant_name, device, location, user_segment, impressions, clicks, ctr, cost, cpc, cpv.
+    Assumes 'cost' is present as a column in the experiments table.
     """
     conn = get_db_connection()
     cur = conn.cursor()
@@ -62,9 +64,15 @@ def get_experiments_metrics(
     query = '''
         SELECT
             variant_name,
-            SUM(impressions) AS impressions,
             SUM(clicks) AS clicks,
-            CASE WHEN SUM(impressions) > 0 THEN CAST(SUM(clicks) AS FLOAT) / SUM(impressions) ELSE 0 END AS ctr
+            SUM(cost) AS total_cost,
+            SUM(impressions) AS impressions,
+            COALESCE(context->>'device', 'unknown') AS device,
+            COALESCE(context->>'location', 'unknown') AS location,
+            COALESCE(context->>'user_segment', 'unknown') AS user_segment,
+            CASE WHEN SUM(impressions) > 0 THEN CAST(SUM(clicks) AS FLOAT) / SUM(impressions) ELSE 0 END AS ctr,
+            CASE WHEN SUM(clicks) > 0 THEN SUM(cost) / SUM(clicks) ELSE NULL END AS cpc,
+            CASE WHEN SUM(impressions) > 0 THEN SUM(cost) / SUM(impressions) ELSE NULL END AS cpv
         FROM experiments
     '''
     params = []
@@ -79,7 +87,7 @@ def get_experiments_metrics(
     if where_clauses:
         query += ' WHERE ' + ' AND '.join(where_clauses)
 
-    query += ' GROUP BY variant_name ORDER BY variant_name;'
+    query += ' GROUP BY variant_name, device, location, user_segment ORDER BY variant_name, device, location, user_segment;'
     cur.execute(query, tuple(params))
     rows = cur.fetchall()
     cur.close()
@@ -87,41 +95,18 @@ def get_experiments_metrics(
     metrics = [
         {
             "variant_name": row[0],
-            "impressions": row[1],
-            "clicks": row[2],
-            "ctr": row[3]
+            "clicks": row[1],
+            "total_cost": row[2],
+            "impressions": row[3],
+            "device": row[4],
+            "location": row[5],
+            "user_segment": row[6],
+            "ctr": row[7],
+            "cpc": row[8],
+            "cpv": row[9]
         } for row in rows
     ]
     return [Metric(**m) for m in metrics]
-
-
-def insert_experiment(data: Experiment) -> None:
-    """
-    Inserts a new experiment record into the database.
-    Expects an Experiment object.
-    """
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    context_json = json.dumps(data.context) if data.context is not None else None
-
-    cur.execute(
-        '''
-        INSERT INTO experiments (experiment_name, variant_name, impressions, clicks, event_date, context)
-        VALUES (%s, %s, %s, %s, %s, %s);
-        ''',
-        (
-            data.experiment_name,
-            data.variant_name,
-            data.impressions,
-            data.clicks,
-            data.event_date,
-            context_json,
-        )
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
 
 
 def insert_experiments_batch(data_list: List[Experiment]) -> None:
@@ -139,6 +124,7 @@ def insert_experiments_batch(data_list: List[Experiment]) -> None:
             d.variant_name,
             d.impressions,
             d.clicks,
+            d.cost,
             d.event_date,
             json.dumps(d.context) if d.context is not None else None
         )
@@ -146,8 +132,8 @@ def insert_experiments_batch(data_list: List[Experiment]) -> None:
     ]
     cur.executemany(
         '''
-        INSERT INTO experiments (experiment_name, variant_name, impressions, clicks, event_date, context)
-        VALUES (%s, %s, %s, %s, %s, %s);
+        INSERT INTO experiments (experiment_name, variant_name, impressions, clicks, cost, event_date, context)
+        VALUES (%s, %s, %s, %s, %s, %s, %s);
         ''',
         values
     )

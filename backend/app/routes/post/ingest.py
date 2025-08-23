@@ -1,11 +1,12 @@
 from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel, RootModel
 from typing import List
-from app.repositories.experiments import insert_experiment, insert_experiments_batch
+from app.repositories.experiments import insert_experiments_batch
 from app.models import Experiment
 from app.validators.validation import (
     validate_non_empty_string,
     validate_non_negative_int,
+    validate_non_negative_float,
     validate_date_string,
     validate_context_dict
 )
@@ -18,6 +19,7 @@ class IngestRequest(BaseModel):
     variant_name: str
     impressions: int
     clicks: int
+    cost: float
     event_date: str
     context: dict = {}
 
@@ -26,6 +28,7 @@ class IngestRequest(BaseModel):
         self.variant_name = validate_non_empty_string(self.variant_name, 'variant_name')
         self.impressions = validate_non_negative_int(self.impressions, 'impressions')
         self.clicks = validate_non_negative_int(self.clicks, 'clicks')
+        self.cost = validate_non_negative_float(self.cost, 'cost')
         self.event_date = validate_date_string(self.event_date, 'event_date')
         self.context = validate_context_dict(self.context)
         return self

@@ -25,3 +25,9 @@ def validate_context_dict(value, field_name: str = "context") -> dict:
     if not isinstance(value, dict):
         raise ValueError(f"{field_name} must be a dict.")
     return value
+
+def validate_non_negative_float(value: float, field_name: str) -> int:
+    """Require float >= 0.0"""
+    if not isinstance(value, float) or value < 0.0:
+        raise ValueError(f"{field_name} must be a non-negative float.")
+    return value
