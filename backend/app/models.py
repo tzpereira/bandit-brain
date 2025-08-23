@@ -18,3 +18,9 @@ class Allocation(BaseModel):
     allocated_pct: float
     date: str
     created_at: Optional[str] = None
+
+class Metric(BaseModel):
+    variant_name: str
+    impressions: int
+    clicks: int
+    ctr: float
