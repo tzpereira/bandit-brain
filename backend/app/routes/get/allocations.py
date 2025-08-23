@@ -17,11 +17,14 @@ def list_allocations(query: AllocationsQuery = AllocationsQuery()):
     """
     List allocations with optional filters: experiment_name, date, and limit.
     """
-    allocations = get_allocations(
-        experiment_name=query.experiment_name,
-        date=query.date,
-        limit=query.limit
-    )
+    if query is None:
+        allocations = get_allocations()
+    else:
+        allocations = get_allocations(
+            experiment_name=query.experiment_name,
+            date=query.date,
+            limit=query.limit
+        )
     if not allocations:
         raise HTTPException(status_code=404, detail="No allocations found")
     

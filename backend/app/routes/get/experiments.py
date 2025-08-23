@@ -18,11 +18,14 @@ def list_experiments(query: ExperimentsQuery = None):
     """
     List experiments, optionally filtered by experiment_name and date.
     """
-    experiments = get_experiments(
-        query.experiment_name, 
-        query.date,
-        query.limit
-    )
+    if query is None:
+        experiments = get_experiments()
+    else:
+        experiments = get_experiments(
+            experiment_name=query.experiment_name, 
+            date=query.date,
+            limit=query.limit
+        )
 
     if not experiments:
         raise HTTPException(status_code=404, detail="No experiments found")

@@ -16,10 +16,13 @@ def get_metrics(query: MetricsQuery = MetricsQuery()):
     """
     Returns aggregated metrics (impressions, clicks, CTR) for each variant, with optional filters.
     """
-    metrics = get_experiments_metrics(
-        experiment_name=query.experiment_name,
-        date=query.date
-    )
+    if query is None:
+        metrics = get_experiments_metrics()
+    else:
+        metrics = get_experiments_metrics(
+            experiment_name=query.experiment_name,
+            date=query.date
+        )
     if not metrics:
         raise HTTPException(status_code=404, detail="No metrics found")
     
