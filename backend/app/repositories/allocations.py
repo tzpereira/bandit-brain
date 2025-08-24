@@ -7,6 +7,7 @@ from app.models import Allocation
 def get_allocations(
     experiment_name: Optional[str] = None,
     date: Optional[str] = None,
+    algorithm: Optional[str] = None,
     limit: Optional[int] = None
 ) -> List[Allocation]:
     """
@@ -17,7 +18,7 @@ def get_allocations(
     cur = conn.cursor()
 
     query = '''
-        SELECT id, experiment_name, variant_name, allocated_pct, date, created_at
+        SELECT id, experiment_name, variant_name, allocated_pct, algorithm, date, created_at
         FROM allocations
     '''
     params = []
@@ -56,13 +57,14 @@ def insert_allocation(data: Allocation) -> None:
 
     cur.execute(
         '''
-        INSERT INTO allocations (experiment_name, variant_name, allocated_pct, date)
-        VALUES (%s, %s, %s, %s);
+        INSERT INTO allocations (experiment_name, variant_name, allocated_pct, algorithm, date)
+        VALUES (%s, %s, %s, %s, %s);
         ''',
         (
             data.experiment_name,
             data.variant_name,
             data.allocated_pct,
+            data.algorithm,
             data.date,
         )
     )
@@ -85,17 +87,33 @@ def insert_allocations_batch(data_list: List[Allocation]) -> None:
             d.experiment_name,
             d.variant_name,
             d.allocated_pct,
+            d.algorithm,
             d.date
         )
         for d in data_list
     ]
     cur.executemany(
         '''
-        INSERT INTO allocations (experiment_name, variant_name, allocated_pct, date)
-        VALUES (%s, %s, %s, %s);
+        INSERT INTO allocations (experiment_name, variant_name, allocated_pct, algorithm, date)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (experiment_name, variant_name, algorithm, date)
+        DO UPDATE SET allocated_pct = EXCLUDED.allocated_pct, created_at = NOW();
         ''',
         values
     )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def delete_allocations():
+    """
+    Delete all allocation records from the database.
+    TODO: Implement conditional deletion based on parameters.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM allocations;")
     conn.commit()
     cur.close()
     conn.close()

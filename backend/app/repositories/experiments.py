@@ -185,3 +185,16 @@ def insert_experiments_batch(data_list: List[Experiment]) -> None:
     conn.commit()
     cur.close()
     conn.close()
+
+    
+def delete_experiments():
+    """
+    Delete all experiment records from the database.
+    TODO: Implement conditional deletion based on parameters.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM experiments;")
+    conn.commit()
+    cur.close()
+    conn.close()
