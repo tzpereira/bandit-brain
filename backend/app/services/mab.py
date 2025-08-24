@@ -6,9 +6,9 @@ Implements Epsilon-Greedy, UCB, Thompson Sampling, and Softmax algorithms for tr
 
 import logging
 import numpy as np
-from datetime import timedelta
 from typing import List, Optional
 from app.models import Metric, Allocation
+from app.utils import get_prediction_date
 
 
 ###############################################################
@@ -25,30 +25,27 @@ class EpsilonGreedyBandit:
         self.epsilon = epsilon
         self.variant_names = [m.variant_name for m in metrics]
         self.experiment_name = experiment_name
-        self.date = date if date is not None else ""
+        self.date = date
 
     def select(self) -> str:
         if np.random.rand() < self.epsilon:
-            # Exploration: choose a random variant
-            return np.random.choice(self.variant_names)
+            return np.random.choice(self.variant_names)  # Exploration
         else:
-            # Exploitation: choose the variant with the highest CTR
             ctrs = [m.ctr for m in self.metrics]
             max_ctr = max(ctrs)
             best = [m.variant_name for m in self.metrics if m.ctr == max_ctr]
-            return np.random.choice(best)
+            return np.random.choice(best)  # Exploitation
 
     def get_allocation(self) -> List[Allocation]:
         best = self.select()
-        prediction_date = self.date + timedelta(days=1)
-        
+        prediction_date_str = get_prediction_date(self.date)
         return [
             Allocation(
                 experiment_name=self.experiment_name,
                 variant_name=name,
                 allocated_pct=1.0 if name == best else 0.0,
                 algorithm="eg",
-                date=prediction_date
+                date=prediction_date_str
             )
             for name in self.variant_names
         ]
@@ -69,7 +66,7 @@ class UCBBandit:
         self.variant_names = [m.variant_name for m in metrics]
         self.total_impressions = sum(m.impressions for m in metrics) + 1
         self.experiment_name = experiment_name
-        self.date = date if date is not None else ""
+        self.date = date
 
     def select(self) -> str:
         scores = []
@@ -85,15 +82,14 @@ class UCBBandit:
 
     def get_allocation(self) -> List[Allocation]:
         best = self.select()
-        prediction_date = self.date + timedelta(days=1)
-        
+        prediction_date_str = get_prediction_date(self.date)
         return [
             Allocation(
                 experiment_name=self.experiment_name,
                 variant_name=name,
                 allocated_pct=1.0 if name == best else 0.0,
                 algorithm="ucb",
-                date=prediction_date
+                date=prediction_date_str
             )
             for name in self.variant_names
         ]
@@ -111,12 +107,11 @@ class ThompsonSamplingBandit:
         self.metrics = metrics
         self.variant_names = [m.variant_name for m in metrics]
         self.experiment_name = experiment_name
-        self.date = date if date is not None else ""
+        self.date = date
 
     def select(self) -> str:
         samples = []
         for m in self.metrics:
-            # Beta posterior: alpha = 1 + clicks, beta = 1 + impressions - clicks
             alpha = 1 + m.clicks
             beta = 1 + m.impressions - m.clicks
             if alpha <= 0 or beta <= 0:
@@ -131,23 +126,22 @@ class ThompsonSamplingBandit:
 
     def get_allocation(self) -> List[Allocation]:
         best = self.select()
-        prediction_date = self.date + timedelta(days=1)
-        
+        prediction_date_str = get_prediction_date(self.date)
         return [
             Allocation(
                 experiment_name=self.experiment_name,
                 variant_name=name,
                 allocated_pct=1.0 if name == best else 0.0,
                 algorithm="ts",
-                date=prediction_date
+                date=prediction_date_str
             )
             for name in self.variant_names
         ]
 
 
-# ###############################################################
+###############################################################
 # Softmax Bandit algorithm for proportional allocation
-# ###############################################################
+###############################################################
 class SoftmaxBandit:
     """
     Softmax: Allocates traffic proportionally to scores (CTR). Use when you want all variants to receive some traffic, but favor better ones.
@@ -159,7 +153,7 @@ class SoftmaxBandit:
         self.tau = tau
         self.variant_names = [m.variant_name for m in metrics]
         self.experiment_name = experiment_name
-        self.date = date if date is not None else ""
+        self.date = date
 
     @staticmethod
     def _softmax(x: np.ndarray, tau: float = 0.1) -> np.ndarray:
@@ -179,17 +173,14 @@ class SoftmaxBandit:
     def get_allocation(self) -> List[Allocation]:
         ctrs = np.array([m.ctr for m in self.metrics])
         probs = self._softmax(ctrs, tau=self.tau)
-        prediction_date = self.date + timedelta(days=1)
-        allocations = []
-        
-        for name, pct in zip(self.variant_names, probs):
-            allocations.append(
-                Allocation(
-                    experiment_name=self.experiment_name,
-                    variant_name=name,
-                    allocated_pct=float(pct),
-                    algorithm="softmax",
-                    date=prediction_date
-                )
+        prediction_date_str = get_prediction_date(self.date)
+        return [
+            Allocation(
+                experiment_name=self.experiment_name,
+                variant_name=name,
+                allocated_pct=float(pct),
+                algorithm="softmax",
+                date=prediction_date_str
             )
-        return allocations
+            for name, pct in zip(self.variant_names, probs)
+        ]
