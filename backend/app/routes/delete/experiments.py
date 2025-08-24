@@ -5,7 +5,7 @@ from app.repositories.experiments import delete_experiments
 router = APIRouter()
 
 @router.delete("/experiments", status_code=status.HTTP_204_NO_CONTENT)
-def delete_experiments():
+def delete_experiments_route():
     """
     Delete experiments records from the database.
     """

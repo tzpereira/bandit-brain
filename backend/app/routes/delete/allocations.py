@@ -5,7 +5,7 @@ from app.repositories.allocations import delete_allocations
 router = APIRouter()
 
 @router.delete("/allocations", status_code=status.HTTP_204_NO_CONTENT)
-def delete_allocations():
+def delete_allocations_route():
     """
     Delete allocations records from the database.
     """
