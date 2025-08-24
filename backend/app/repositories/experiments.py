@@ -34,7 +34,7 @@ def get_experiments(
     if where_clauses:
         query += ' WHERE ' + ' AND '.join(where_clauses)
 
-    query += ' ORDER BY event_date DESC, created_at DESC'
+    query += ' ORDER BY id ASC'
     if limit:
         query += ' LIMIT %s'
         params.append(limit)

@@ -12,7 +12,6 @@ from app.validators.validation import (
     validate_epsilon
 )
 
-
 router = APIRouter()
 
 class RecommendRequest(BaseModel):
