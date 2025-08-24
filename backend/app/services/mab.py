@@ -44,6 +44,7 @@ class EpsilonGreedyBandit:
                 experiment_name=self.experiment_name,
                 variant_name=name,
                 allocated_pct=1.0 if name == best else 0.0,
+                algorithm="eg",
                 date=self.date
             )
             for name in self.variant_names
@@ -86,6 +87,7 @@ class UCBBandit:
                 experiment_name=self.experiment_name,
                 variant_name=name,
                 allocated_pct=1.0 if name == best else 0.0,
+                algorithm="ucb",
                 date=self.date
             )
             for name in self.variant_names
@@ -129,6 +131,7 @@ class ThompsonSamplingBandit:
                 experiment_name=self.experiment_name,
                 variant_name=name,
                 allocated_pct=1.0 if name == best else 0.0,
+                algorithm="ts",
                 date=self.date
             )
             for name in self.variant_names
@@ -176,6 +179,7 @@ class SoftmaxBandit:
                     experiment_name=self.experiment_name,
                     variant_name=name,
                     allocated_pct=float(pct),
+                    algorithm="softmax",
                     date=self.date
                 )
             )

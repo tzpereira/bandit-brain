@@ -9,6 +9,7 @@ router = APIRouter()
 def list_allocations(
     experiment_name: Optional[str] = None,
     date: Optional[str] = None,
+    algorithm: Optional[str] = None,
     limit: Optional[int] = None
 ):
     """
@@ -17,6 +18,7 @@ def list_allocations(
     allocations = get_allocations(
         experiment_name=experiment_name,
         date=date,
+        algorithm=algorithm,
         limit=limit
     )
 

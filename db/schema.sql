@@ -23,9 +23,10 @@ CREATE TABLE IF NOT EXISTS allocations (
     experiment_name TEXT NOT NULL,
     variant_name TEXT NOT NULL,
     allocated_pct FLOAT NOT NULL CHECK (allocated_pct >= 0 AND allocated_pct <= 1),
+    algorithm TEXT NOT NULL,
     date DATE NOT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
-    CONSTRAINT unique_alloc_variant_date UNIQUE (experiment_name, variant_name, date)
+    CONSTRAINT unique_alloc_variant_date UNIQUE (experiment_name, variant_name, algorithm, date)
 );
 
 -- Indexes for quick queries

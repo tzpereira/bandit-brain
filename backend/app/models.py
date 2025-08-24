@@ -17,6 +17,7 @@ class Allocation(BaseModel):
     experiment_name: str
     variant_name: str
     allocated_pct: float
+    algorithm: Optional[str] = None
     date: str
     created_at: Optional[str] = None
 
