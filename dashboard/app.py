@@ -2,7 +2,7 @@ import random
 import requests
 import polars as pl
 import streamlit as st
-from datetime import date
+from datetime import date, datetime, timedelta
 import plotly.express as px
 from streamlit_tags import st_tags
 from streamlit_autorefresh import st_autorefresh
@@ -16,7 +16,16 @@ st.title("Bandit Brain Dashboard")
 # API FUNCTIONS 
 # ---------------------------
 def fetch_allocations(exp_name, exp_date, method, epsilon=None, c=None, tau=None):
-    payload = {"experiment_name": exp_name, "date": str(exp_date), "method": method}
+    if not isinstance(exp_date, (date, datetime)):
+        exp_date_obj = date.fromisoformat(str(exp_date))
+    else:
+        # garante que, se for datetime, converte para date
+        exp_date_obj = exp_date.date() if isinstance(exp_date, datetime) else exp_date
+
+    prediction_date = exp_date_obj + timedelta(days=1)
+
+    payload = {"experiment_name": exp_name, "date": str(prediction_date), "method": method}
+    
     if method == "eg" and epsilon is not None:
         payload["epsilon"] = epsilon
     if method == "ucb" and c is not None:
@@ -346,7 +355,7 @@ if isinstance(decision_log_df, pl.DataFrame) and decision_log_df.height > 0:
     df_alloc_evol["total"] = df_alloc_evol.groupby("time_bin")["allocations"].transform("sum")
     df_alloc_evol["share"] = df_alloc_evol["allocations"] / df_alloc_evol["total"]
 
-    st.subheader("Allocation Evolution Over Time")
+    st.subheader("Allocation by Variant Evolution Over Time")
     st.caption(f"Traffic allocation aggregated in bins of {bin_size} steps.")
 
     fig_alloc = px.area(
@@ -354,7 +363,6 @@ if isinstance(decision_log_df, pl.DataFrame) and decision_log_df.height > 0:
         x="time_bin",
         y="share",
         color="variant_name",
-        title="Traffic Allocation by Variant Over Time",
         groupnorm=None  # already normalized manually
     )
     st.plotly_chart(fig_alloc, use_container_width=True)
@@ -390,11 +398,11 @@ if isinstance(metrics_by_context_df, pl.DataFrame) and metrics_by_context_df.hei
     st.subheader("Cost vs CTR by Variant, Segment, Device")
     fig_ctx = px.scatter(df_ctx, x="total_cost", y="ctr", color="variant_name", symbol="device",
                          size="impressions", hover_data=["clicks", "user_segment", "device"],
-                         facet_col="user_segment", title="CTR vs Cost by Variant, Segment, Device")
+                         facet_col="user_segment")
     st.plotly_chart(fig_ctx, use_container_width=True)
 
     st.subheader("Average CTR by Segment and Device")
-    fig_bar = px.bar(df_ctx, x="user_segment", y="ctr", color="device", barmode="group", title="Average CTR by Segment and Device")
+    fig_bar = px.bar(df_ctx, x="user_segment", y="ctr", color="device", barmode="group")
     st.plotly_chart(fig_bar, use_container_width=True)
 
 # 7. Geographic Performance
@@ -414,7 +422,6 @@ if isinstance(metrics_by_context_df, pl.DataFrame) and metrics_by_context_df.hei
         color="ctr",
         hover_data=["impressions", "clicks"],
         color_continuous_scale=px.colors.sequential.Viridis,
-        title="CTR by Geographic Location",
         scope="world",
         projection="natural earth"
     )
@@ -454,8 +461,7 @@ if isinstance(decision_log_df, pl.DataFrame) and decision_log_df.height > 0:
             hourly,
             x="hour",
             y=["impressions", "clicks"],
-            barmode="group",
-            title="Impressions & Clicks by Hour of Day"
+            barmode="group"
         )
         st.subheader("Impressions & Clicks by Hour of Day")
         st.plotly_chart(fig_hour, use_container_width=True)
