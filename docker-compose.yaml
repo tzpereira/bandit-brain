@@ -13,6 +13,15 @@ services:
     networks:
       - bandit-net
 
+  dashboard:
+    build: ./dashboard
+    ports:
+      - "8501:8501"
+    depends_on:
+      - backend
+    networks:
+      - bandit-net
+
   db:
     image: postgres:17
     restart: always

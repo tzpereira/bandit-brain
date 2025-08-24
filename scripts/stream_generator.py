@@ -19,7 +19,7 @@ BASE_CTR = {
 
 # Possible Contexts
 DEVICES = ["desktop", "mobile", "tablet"]
-LOCATIONS = ["US", "CA", "BR", "FR", "DE"]
+LOCATIONS = ["USA", "CAN", "BRA", "FRA", "DEU"]
 USER_SEGMENTS = ["new_user", "returning_user", "vip"]
 
 parser = argparse.ArgumentParser(description="Streaming data simulator for MAB")
@@ -91,7 +91,7 @@ while True:
         base_cpc = 0.25 if clicks else 0.05
         device_factor = 1.2 if device == "mobile" else (0.9 if device == "tablet" else 1.0)
         segment_factor = 1.5 if segment == "vip" else (0.8 if segment == "new_user" else 1.0)
-        location_factor = 1.3 if location == "US" else (1.1 if location == "CA" else (0.7 if location == "BR" else 1.0))
+        location_factor = 1.3 if location == "USA" else (1.1 if location == "CAN" else (0.7 if location == "BRA" else 1.0))
         cost = round(base_cpc * device_factor * segment_factor * location_factor, 4)
 
         payload = {

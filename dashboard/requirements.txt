@@ -1,0 +1,6 @@
+plotly
+polars
+requests
+streamlit
+streamlit-tags
+streamlit-autorefresh
