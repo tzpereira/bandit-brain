@@ -4,8 +4,9 @@ Multi-Armed Bandit Algorithms for Variant Allocation
 Implements Epsilon-Greedy, UCB, Thompson Sampling, and Softmax algorithms for traffic allocation in online experiments.
 """
 
-import numpy as np
 import logging
+import numpy as np
+from datetime import timedelta
 from typing import List, Optional
 from app.models import Metric, Allocation
 
@@ -39,13 +40,15 @@ class EpsilonGreedyBandit:
 
     def get_allocation(self) -> List[Allocation]:
         best = self.select()
+        prediction_date = self.date + timedelta(days=1)
+        
         return [
             Allocation(
                 experiment_name=self.experiment_name,
                 variant_name=name,
                 allocated_pct=1.0 if name == best else 0.0,
                 algorithm="eg",
-                date=self.date
+                date=prediction_date
             )
             for name in self.variant_names
         ]
@@ -82,13 +85,15 @@ class UCBBandit:
 
     def get_allocation(self) -> List[Allocation]:
         best = self.select()
+        prediction_date = self.date + timedelta(days=1)
+        
         return [
             Allocation(
                 experiment_name=self.experiment_name,
                 variant_name=name,
                 allocated_pct=1.0 if name == best else 0.0,
                 algorithm="ucb",
-                date=self.date
+                date=prediction_date
             )
             for name in self.variant_names
         ]
@@ -126,13 +131,15 @@ class ThompsonSamplingBandit:
 
     def get_allocation(self) -> List[Allocation]:
         best = self.select()
+        prediction_date = self.date + timedelta(days=1)
+        
         return [
             Allocation(
                 experiment_name=self.experiment_name,
                 variant_name=name,
                 allocated_pct=1.0 if name == best else 0.0,
                 algorithm="ts",
-                date=self.date
+                date=prediction_date
             )
             for name in self.variant_names
         ]
@@ -172,7 +179,9 @@ class SoftmaxBandit:
     def get_allocation(self) -> List[Allocation]:
         ctrs = np.array([m.ctr for m in self.metrics])
         probs = self._softmax(ctrs, tau=self.tau)
+        prediction_date = self.date + timedelta(days=1)
         allocations = []
+        
         for name, pct in zip(self.variant_names, probs):
             allocations.append(
                 Allocation(
@@ -180,7 +189,7 @@ class SoftmaxBandit:
                     variant_name=name,
                     allocated_pct=float(pct),
                     algorithm="softmax",
-                    date=self.date
+                    date=prediction_date
                 )
             )
         return allocations

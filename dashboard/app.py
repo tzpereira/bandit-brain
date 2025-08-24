@@ -41,11 +41,25 @@ def fetch_metrics(exp_name, exp_date, group_by_context=False):
         st.error(f"Error fetching metrics: {e}")
     return pl.DataFrame()
 
+def fetch_experiments(exp_name, exp_date=None, limit=None):
+    params = {"experiment_name": exp_name, "limit": limit}
+    if exp_date:
+        params["date"] = str(exp_date)
+    try:
+        resp = requests.get(f"{API_URL}/experiments", params=params, timeout=10)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception as e:
+        st.error(f"Error fetching experiments: {e}")
+    return []
+
 def load_data(exp_name, exp_date, method, epsilon=None, c=None, tau=None):
     allocations = fetch_allocations(exp_name, exp_date, method, epsilon, c, tau)
     metrics = fetch_metrics(exp_name, exp_date)
     metrics_by_context = fetch_metrics(exp_name, exp_date, group_by_context=True)
-    return allocations, metrics, metrics_by_context
+    logs = fetch_experiments(exp_name, exp_date)
+    decision_log_df = pl.DataFrame(logs) if logs else pl.DataFrame()
+    return allocations, metrics, metrics_by_context, decision_log_df
 
 # ---------------------------
 # SIDEBAR CONTROLS
@@ -100,16 +114,14 @@ current_params = {
 if param_tracker != current_params:
     # Remove/reset all data related to the simulation from st.session_state
     keys_to_reset = [
-        "allocations_df", "metrics_df", "metrics_by_context_df",
-        "decision_log", "is_watching", "remaining_events",
-        "last_batch_sent", "refresh_key"
+    "allocations_df", "metrics_df", "metrics_by_context_df",
+    "decision_log_df", "is_watching", "remaining_events",
+    "last_batch_sent", "refresh_key"
     ]
     for key in keys_to_reset:
         if key in st.session_state:
-            if key.endswith("_df") or "allocations" in key or "metrics" in key:
+            if key.endswith("_df") or "allocations" in key or "metrics" in key or key == "decision_log_df":
                 st.session_state[key] = pl.DataFrame()
-            elif key == "decision_log":
-                st.session_state[key] = []
             elif key == "is_watching":
                 st.session_state[key] = False
             else:
@@ -130,7 +142,6 @@ if param_tracker != current_params:
     st.session_state["allocations_df"] = st.session_state.get("allocations_df", pl.DataFrame())
     st.session_state["metrics_df"] = st.session_state.get("metrics_df", pl.DataFrame())
     st.session_state["metrics_by_context_df"] = st.session_state.get("metrics_by_context_df", pl.DataFrame())
-    st.session_state["decision_log"] = st.session_state.get("decision_log", [])
     st.session_state["is_watching"] = False
     st.session_state["remaining_events"] = 0
     st.session_state["last_batch_sent"] = 0
@@ -141,7 +152,6 @@ if param_tracker != current_params:
     allocations_df = pl.DataFrame()
     metrics_df = pl.DataFrame()
     metrics_by_context_df = pl.DataFrame()
-    decision_log = []
 
 # ---------------------------
 # INITIALIZATION
@@ -165,10 +175,11 @@ else:
         need_load = True
 
 if need_load:
-    a, m, mbc = load_data(experiment_name, date_selected, algorithm, epsilon, c_param, tau)
+    a, m, mbc, decision_log_df = load_data(experiment_name, date_selected, algorithm, epsilon, c_param, tau)
     st.session_state["allocations_df"] = a if isinstance(a, pl.DataFrame) else pl.DataFrame()
     st.session_state["metrics_df"] = m if isinstance(m, pl.DataFrame) else pl.DataFrame()
     st.session_state["metrics_by_context_df"] = mbc if isinstance(mbc, pl.DataFrame) else pl.DataFrame()
+    st.session_state["decision_log_df"] = decision_log_df if isinstance(decision_log_df, pl.DataFrame) else pl.DataFrame()
     st.session_state["simulation_enabled"] = True
 
 # ---------------------------
@@ -177,7 +188,7 @@ if need_load:
 allocations_df = st.session_state.get("allocations_df", pl.DataFrame())
 metrics_df = st.session_state.get("metrics_df", pl.DataFrame())
 metrics_by_context_df = st.session_state.get("metrics_by_context_df", pl.DataFrame())
-decision_log = st.session_state.get("decision_log", [])
+decision_log_df = st.session_state.get("decision_log_df", pl.DataFrame())
 
 # Remove unwanted columns
 if isinstance(allocations_df, pl.DataFrame):
@@ -200,8 +211,6 @@ def simulate_events(n_events=1000):
     USER_SEGMENTS = ["new_user", "returning_user", "vip"]
     BASE_CTR = {v: random.uniform(0.04, 0.07) for v in variant_list}
 
-    if "decision_log" not in st.session_state:
-        st.session_state.decision_log = []
     batch = []
 
     for _ in range(n_events):
@@ -229,17 +238,6 @@ def simulate_events(n_events=1000):
             "event_date": str(date_selected),
             "cost": cost,
             "context": {"device": device, "location": location, "user_segment": segment, "hour": hour},
-        })
-
-        # Add decision log entry
-        st.session_state.decision_log.append({
-            "time_step": len(st.session_state.decision_log) + 1,
-            "algorithm": algorithm,
-            "variant_name": variant,
-            "reward": clicks / impressions if impressions > 0 else 0,
-            "impressions": impressions,
-            "clicks": clicks,
-            "context": {"device": device, "location": location, "user_segment": segment, "hour": hour}
         })
 
     if batch:
@@ -278,14 +276,16 @@ if st.session_state.is_watching:
             st.session_state.remaining_events -= events_to_send
             st.session_state.last_batch_sent += events_to_send
             # Update data from API after sending batch
-            a, m, mbc = load_data(experiment_name, date_selected, algorithm, epsilon, c_param, tau)
+            a, m, mbc, decision_log_df = load_data(experiment_name, date_selected, algorithm, epsilon, c_param, tau)
             st.session_state["allocations_df"] = a if isinstance(a, pl.DataFrame) else pl.DataFrame()
             st.session_state["metrics_df"] = m if isinstance(m, pl.DataFrame) else pl.DataFrame()
             st.session_state["metrics_by_context_df"] = mbc if isinstance(mbc, pl.DataFrame) else pl.DataFrame()
+            st.session_state["decision_log_df"] = decision_log_df if isinstance(decision_log_df, pl.DataFrame) else pl.DataFrame()
             # Update local variables
             allocations_df = st.session_state.get("allocations_df", pl.DataFrame())
             metrics_df = st.session_state.get("metrics_df", pl.DataFrame())
             metrics_by_context_df = st.session_state.get("metrics_by_context_df", pl.DataFrame())
+            decision_log_df = st.session_state.get("decision_log_df", pl.DataFrame())
     else:
         st.session_state.is_watching = False
         st.sidebar.success("✅ Simulation completed.")
@@ -327,10 +327,13 @@ if isinstance(metrics_df, pl.DataFrame) and metrics_df.height > 0:
             st.markdown(f"${float(total_cost):.2f}")
 
 # 2. Allocation Evolution Over Time
-if "decision_log" in st.session_state and len(st.session_state.decision_log) > 0:
-    df_log = pl.DataFrame(st.session_state.decision_log).to_pandas()
+if isinstance(decision_log_df, pl.DataFrame) and decision_log_df.height > 0:
+    df_log = decision_log_df.to_pandas()
     n_bins = 10
-    bin_size = total_events // n_bins
+    bin_size = max(1, total_events // n_bins)
+    if "time_step" not in df_log.columns:
+        df_log = df_log.copy()
+        df_log["time_step"] = range(1, len(df_log) + 1)
     df_log["time_bin"] = (df_log["time_step"] // bin_size) * bin_size
 
     df_alloc_evol = (
@@ -357,11 +360,16 @@ if "decision_log" in st.session_state and len(st.session_state.decision_log) > 0
     st.plotly_chart(fig_alloc, use_container_width=True)
     
 # 3. Decision Log / Cumulative Reward
-if "decision_log" in st.session_state and len(st.session_state.decision_log) > 0:
+if isinstance(decision_log_df, pl.DataFrame) and decision_log_df.height > 0:
+    df_log = decision_log_df.to_pandas()
+    if "reward" not in df_log.columns:
+        df_log["reward"] = df_log["clicks"] / df_log["impressions"]
+    if "time_step" not in df_log.columns:
+        df_log["time_step"] = range(1, len(df_log) + 1)
     df_log["cumulative_mean_reward"] = df_log.groupby("variant_name")["reward"].transform(lambda x: x.expanding().mean())
-    st.subheader("Cumulative Reward by Variant (Simulation)")
+    st.subheader("Cumulative Reward by Variant")
     st.caption("Performance over time for each variant.")
-    fig_reward = px.line(df_log, x="time_step", y="cumulative_mean_reward", color="variant_name", title="Cumulative Reward by Variant")
+    fig_reward = px.line(df_log, x="time_step", y="cumulative_mean_reward", color="variant_name")
     st.plotly_chart(fig_reward, use_container_width=True)
 
 # 4. Experiment Metrics
@@ -437,8 +445,8 @@ if isinstance(metrics_by_context_df, pl.DataFrame) and metrics_by_context_df.hei
         st.plotly_chart(fig_heatmap, use_container_width=True)
 
 # 9. Impressions & Clicks by Hour of Day
-if "decision_log" in st.session_state and len(st.session_state.decision_log) > 0:
-    df_log = pl.DataFrame(st.session_state.decision_log).to_pandas()
+if isinstance(decision_log_df, pl.DataFrame) and decision_log_df.height > 0:
+    df_log = decision_log_df.to_pandas()
     if "context" in df_log.columns and set(["impressions", "clicks"]).issubset(df_log.columns):
         df_log["hour"] = df_log["context"].apply(lambda x: x.get("hour") if isinstance(x, dict) else None)
         hourly = df_log.groupby("hour")[["impressions", "clicks"]].sum().reset_index()
