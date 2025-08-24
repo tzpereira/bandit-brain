@@ -72,19 +72,21 @@ headers = {"Content-Type": "application/json"}
 while True:
     batch = []
     batch_time = datetime.now()
-    for _ in range(BATCH_SIZE):
+    # Uniformly distribute events across hours
+    hours = [h for h in range(24)]
+    hour_per_event = [hours[i % 24] for i in range(BATCH_SIZE)]
+    for idx in range(BATCH_SIZE):
         if MAX_EVENTS is not None and event_count >= MAX_EVENTS:
             break
         variant = random.choice(VARIANTS)
         device = random.choice(DEVICES)
         location = random.choice(LOCATIONS)
         segment = random.choice(USER_SEGMENTS)
-        current_time = datetime.now()
-        hour = current_time.hour
-        event_date = current_time.date().isoformat()
+        hour = hour_per_event[idx]
+        event_date = datetime.now().date().isoformat()
         impressions = 1
         clicks = simulate_click(variant, device, segment, hour)
-        
+
         # Simulate a realistic cost per impression/click
         base_cpc = 0.25 if clicks else 0.05
         device_factor = 1.2 if device == "mobile" else (0.9 if device == "tablet" else 1.0)
