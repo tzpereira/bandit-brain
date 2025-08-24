@@ -35,6 +35,7 @@ Bandit Brain is a robust experimentation and recommendation platform based on Mu
 - Experiment simulation and management
 - Docker support for easy deployment
 - PostgreSQL integration
+- All dashboard visualizations use real, persisted backend data for consistency and auditability.
 
 ---
 
@@ -44,9 +45,9 @@ Bandit Brain is a robust experimentation and recommendation platform based on Mu
 backend/         # API and business logic
 dashboard/       # Visualization app (Streamlit)
 db/              # Database schema and scripts
-experimentation/ # Notebooks and simulation scripts
 routes-collection/ # API route examples (HAR)
 scripts/         # Utility scripts
+public/          # Static assets (logo, etc)
 ```
 
 ---
@@ -129,7 +130,7 @@ Get recommended allocation for experiment variants using a chosen algorithm.
 	"epsilon": 0.1,        // for "eg"
 	"c": 2.0,              // for "ucb"
 	"tau": 0.1,            // for "softmax"
-	"date": "2025-08-24"
+	"date": "2025-08-24"  // ISO format (YYYY-MM-DD)
 }
 ```
 
@@ -142,7 +143,7 @@ Get recommended allocation for experiment variants using a chosen algorithm.
 		"variant_name": "A",
 		"allocated_pct": 1.0,
 		"algorithm": "eg",
-		"date": "2025-08-24",
+		"date": "2025-08-25", // always predicts for the next day (allocation date is always the day after the input date)
 		"created_at": null
 	},
 	{
@@ -151,11 +152,13 @@ Get recommended allocation for experiment variants using a chosen algorithm.
 		"variant_name": "B",
 		"allocated_pct": 0.0,
 		"algorithm": "eg",
-		"date": "2025-08-24",
+		"date": "2025-08-25", // always predicts for the next day
 		"created_at": null
 	}
 ]
 ```
+
+**Note:** The `date` field in the response always refers to the next day after the input date, representing a forecast for future allocation.
 
 ---
 
@@ -286,7 +289,7 @@ Retrieve persisted allocation results for experiment variants. This endpoint ret
 | Name             | Type   | Required | Description                                 |
 |------------------|--------|----------|---------------------------------------------|
 | experiment_name  | string | No       | Filter by experiment name                   |
-| date             | string | No       | Filter by allocation date (YYYY-MM-DD)      |
+| date             | string | No       | Filter by allocation date (YYYY-MM-DD, ISO format)      |
 | algorithm        | string | No       | Filter by algorithm used (eg, ucb, ts, softmax) |
 | limit            | int    | No       | Limit the number of returned allocations    |
 
@@ -307,7 +310,7 @@ Returns a JSON array of allocation objects.
 		"variant_name": "A",
 		"allocated_pct": 1.0,
 		"algorithm": "eg",
-		"date": "2025-08-24",
+		"date": "2025-08-25", // always predicts for the next day
 		"created_at": "2025-08-24T12:00:00"
 	},
 	{
@@ -316,15 +319,13 @@ Returns a JSON array of allocation objects.
 		"variant_name": "B",
 		"allocated_pct": 0.0,
 		"algorithm": "eg",
-		"date": "2025-08-24",
+		"date": "2025-08-25", // always predicts for the next day
 		"created_at": "2025-08-24T12:00:00"
 	}
 ]
 ```
 
-**What it does:**
-Returns all persisted allocation results for experiment variants, allowing you to audit, analyze, or retrieve the recommended variant splits for any experiment and algorithm.
-
+**Note:** The `date` field in the response always refers to the next day after the input date, representing a forecast for future allocation. All date fields must use ISO format (`YYYY-MM-DD`).
 
 ---
 
