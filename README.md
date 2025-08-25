@@ -8,6 +8,12 @@ Bandit Brain is a robust experimentation and recommendation platform based on Mu
 
 ---
 
+## Demo
+
+![Demo](public/demo.gif)
+
+---
+
 ## Table of Contents
 
 - [Features](#features)
@@ -23,6 +29,7 @@ Bandit Brain is a robust experimentation and recommendation platform based on Mu
 - [Models](#models)
 - [Example Usage](#example-usage)
 - [License](#license)
+- [Disclaimer](#disclaimer)
 - [Contributing](#contributing)
 
 ---
@@ -31,6 +38,7 @@ Bandit Brain is a robust experimentation and recommendation platform based on Mu
 
 - REST API for experiment ingestion, recommendation, allocation, and metrics
 - Dashboard for results visualization
+- Upload real experiment data via CSV directly in the dashboard
 - Support for multiple MAB algorithms: Epsilon-Greedy, UCB, Thompson Sampling, Softmax
 - Experiment simulation and management
 - Docker support for easy deployment
@@ -42,12 +50,21 @@ Bandit Brain is a robust experimentation and recommendation platform based on Mu
 ## Project Structure
 
 ```
-backend/         # API and business logic
-dashboard/       # Visualization app (Streamlit)
-db/              # Database schema and scripts
-routes-collection/ # API route examples (HAR)
-scripts/         # Utility scripts
-public/          # Static assets (logo, etc)
+backend/
+  app/
+    repositories/
+    routes/
+    services/
+    validators/
+  Dockerfile
+  requirements.txt
+dashboard/
+  Dockerfile
+  requirements.txt
+db/
+routes-collection/
+scripts/
+public/
 ```
 
 ---
@@ -62,19 +79,34 @@ public/          # Static assets (logo, etc)
 	 cd bandit-brain
 	 ```
 
-2. Install backend dependencies:
-	 ```bash
-	 cd backend
-	 pip install -r requirements.txt
-	 python app/main.py
-	 ```
+2. Quick start:
+	```bash
+	docker-compose up --build
+	```
 
-3. Install and run the dashboard:
-	 ```bash
-	 cd ../dashboard
-	 pip install -r requirements.txt
-	 python app.py
-	 ```
+---
+
+## Using the Dashboard with CSV Uploads
+
+The dashboard allows you to either simulate experiment data or upload your own real data using a CSV file. This makes it easy to analyze and visualize results from actual experiments, not just synthetic ones.
+
+**How to use:**
+
+1. Open the dashboard in your browser.
+2. Select **Upload CSV** as the data input mode.
+3. Upload your CSV file containing experiment data.
+4. The dashboard will process your data and display all visualizations and metrics based on your uploaded file.
+
+**Expected CSV format:**
+
+| variant_name | impressions | clicks | cost | device | location | user_segment  | hour |
+|--------------|-------------|--------|------|--------|----------|---------------|------|
+| A            | 1000        | 120    | 1.0  | mobile | BRA      | new_user      | 14   |
+| B            | 950         | 110    | 0.9  | desktop| USA      | returning_user| 15   |
+
+You can download a CSV template directly from the dashboard interface.
+
+**Tip:** All columns are required for best results. The dashboard will use your data for all visualizations, metrics, and recommendations.
 
 ### Docker
 
@@ -339,6 +371,12 @@ Returns a JSON array of allocation objects.
 ## License
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
+
+---
+
+## Disclaimer
+
+This software is provided for educational and research purposes only. It is not intended for commercial use. Use at your own risk.
 
 ---
 
