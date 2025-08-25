@@ -92,6 +92,9 @@ st.set_page_config(page_title="🧠 Bandit Brain Dashboard", layout="wide")
 
 st.title("🧠 Bandit Brain Dashboard")
 
+if "expander_open" not in st.session_state:
+    st.session_state["expander_open"] = True
+
 with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_open"]):
     # Track any parameter that should reset the data if changed
     param_tracker = st.session_state.get("param_tracker", {})
