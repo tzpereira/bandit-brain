@@ -25,6 +25,8 @@ Bandit Brain is a robust experimentation and recommendation platform based on Mu
 	- [List Experiments](#list-experiments)
 	- [List Metrics](#list-metrics)
 	- [List Allocations](#list-allocations)
+	- [Delete Allocations](#delete-allocations)
+	- [Delete Experiments](#delete-experiments)
     
 - [Models](#models)
 - [Example Usage](#example-usage)
@@ -361,10 +363,31 @@ Returns a JSON array of allocation objects.
 
 ---
 
+### Delete Allocations
+
+**DELETE /delete/allocations**
+
+Delete allocation records for a given experiment or variant.
+
+- No payload required.
+- No response body returned on success (HTTP 204).
+
+---
+
+### Delete Experiments
+
+**DELETE /delete/experiments**
+
+Delete experiment records by experiment name.
+
+- No payload required.
+- No response body returned on success (HTTP 204).
+
+---
+
 ## Example Usage
 
 - See example routes in `routes-collection/bandit-brain-routes.har`
-- Try simulations in `experimentation/Multi-armed-Bandits.ipynb`
 
 ---
 
