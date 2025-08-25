@@ -88,9 +88,9 @@ def clear_data():
             else:
                 st.session_state[key] = 0
 
-st.set_page_config(page_title="🧠 Bandit Brain Dashboard", layout="wide")
+st.set_page_config(page_title="Bandit Brain", layout="wide")
 
-st.title("🧠 Bandit Brain Dashboard")
+st.title("🧠 Bandit Brain")
 
 if "expander_open" not in st.session_state:
     st.session_state["expander_open"] = True
@@ -637,3 +637,16 @@ if isinstance(decision_log_df, pl.DataFrame) and decision_log_df.height > 0:
         )
         st.subheader("Impressions & Clicks by Hour of Day")
         st.plotly_chart(fig_hour, use_container_width=True)
+        
+# Footer
+st.markdown("""
+    <style>
+        .footer {
+            text-align: center;
+            margin-top: 2em;
+        }
+    </style>
+    <div class='footer'>
+        <span>Made by <a href='https://github.com/tzpereira' target='_blank' style='color:#FF69B4; text-decoration:none;'><b>Mateus</b></a> &middot; Powered by Streamlit</span>
+    </div>
+""", unsafe_allow_html=True)
