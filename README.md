@@ -18,6 +18,7 @@ Bandit Brain is a robust experimentation and recommendation platform based on Mu
 
 - [Features](#features)
 - [Project Structure](#project-structure)
+- [Models](#models)
 - [Getting Started](#getting-started)
 - [API Documentation](#api-documentation)
 	- [Ingest Experiments](#ingest-experiments)
@@ -27,8 +28,7 @@ Bandit Brain is a robust experimentation and recommendation platform based on Mu
 	- [List Allocations](#list-allocations)
 	- [Delete Allocations](#delete-allocations)
 	- [Delete Experiments](#delete-experiments)
-    
-- [Models](#models)
+	
 - [Example Usage](#example-usage)
 - [License](#license)
 - [Disclaimer](#disclaimer)
@@ -46,6 +46,72 @@ Bandit Brain is a robust experimentation and recommendation platform based on Mu
 - Docker support for easy deployment
 - PostgreSQL integration
 - All dashboard visualizations use real, persisted backend data for consistency and auditability.
+
+---
+
+## Models
+
+This platform supports several Multi-Armed Bandit (MAB) algorithms for experiment allocation. Below are technical details for each model, including definition, formula, recommended use cases, and tradeoffs.
+
+### Epsilon-Greedy (EG)
+**Definition:** Selects the best-known variant with probability `1 - epsilon` and explores a random variant with probability `epsilon`.
+
+**Formula:**
+- With probability `epsilon`, select a random variant.
+- With probability `1 - epsilon`, select the variant with the highest observed mean reward (e.g., CTR).
+
+**When to use:**
+- When a simple balance between exploration and exploitation is needed, especially in stationary environments or when initial uncertainty is high.
+
+**Tradeoffs:**
+- Easy to implement and tune. May over-explore if `epsilon` is too high, or under-explore if too low. Does not adapt exploration rate over time.
+
+---
+
+### Upper Confidence Bound (UCB)
+**Definition:** Selects variants based on an optimistic estimate of their performance, considering both observed mean and uncertainty.
+
+**Formula:**
+- For each variant:
+  `score = mean + c * sqrt(ln(total_impressions) / impressions_variant)`
+  where `c` controls exploration strength.
+
+**When to use:**
+- When it is important to prioritize less-tested variants and systematically reduce uncertainty, especially with many options.
+
+**Tradeoffs:**
+- Automatically balances exploration and exploitation. Sensitive to the choice of `c`. May over-explore rarely chosen variants.
+
+---
+
+### Thompson Sampling (TS)
+**Definition:** Uses Bayesian inference to sample possible reward rates for each variant, balancing exploration and exploitation probabilistically.
+
+**Formula:**
+- For each variant, sample a reward rate from the Beta distribution parameterized by observed successes and failures.
+- Select the variant with the highest sampled value.
+
+**When to use:**
+- Recommended for adaptive, data-scarce environments. Handles uncertainty and non-stationarity well.
+
+**Tradeoffs:**
+- Typically achieves strong empirical performance. More complex to implement and interpret. Requires probabilistic reasoning.
+
+---
+
+### Softmax
+**Definition:** Allocates selection probabilities to each variant proportional to their observed performance, smoothed by a temperature parameter `tau`.
+
+**Formula:**
+- For each variant:
+  `p_i = exp(mean_i / tau) / sum_j exp(mean_j / tau)`
+  where `tau` controls the degree of exploration.
+
+**When to use:**
+- Useful when all variants should have a nonzero chance of selection, even if their performance is low. Good for continuous exploration.
+
+**Tradeoffs:**
+- Sensitive to `tau`: low values favor exploitation, high values favor exploration. May require careful tuning for optimal results.
 
 ---
 
