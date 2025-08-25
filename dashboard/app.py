@@ -1,3 +1,4 @@
+import base64
 import random
 import requests
 import polars as pl
@@ -9,8 +10,278 @@ from streamlit_autorefresh import st_autorefresh
 
 API_URL = "http://backend:8000"
 
-st.set_page_config(page_title="Bandit Brain Dashboard", layout="wide")
-st.title("Bandit Brain Dashboard")
+def fetch_allocations(exp_name, exp_date, method, epsilon=None, c=None, tau=None):
+    if not isinstance(exp_date, (date, datetime)):
+        exp_date_obj = date.fromisoformat(str(exp_date))
+    else:
+        exp_date_obj = exp_date.date() if isinstance(exp_date, datetime) else exp_date
+    prediction_date = exp_date_obj + timedelta(days=1)
+    payload = {"experiment_name": exp_name, "date": str(prediction_date), "method": method}
+    if method == "eg" and epsilon is not None:
+        payload["epsilon"] = epsilon
+    if method == "ucb" and c is not None:
+        payload["c"] = c
+    if method == "softmax" and tau is not None:
+        payload["tau"] = tau
+    try:
+        resp = requests.post(f"{API_URL}/recommend", json=payload, timeout=10)
+        if resp.status_code == 200:
+            return pl.DataFrame(resp.json())
+    except Exception as e:
+        st.error(f"Error fetching allocations: {e}")
+    return pl.DataFrame()
+
+def fetch_metrics(exp_name, exp_date, group_by_context=False):
+    params = {"experiment_name": exp_name, "date": str(exp_date), "group_by_context": str(group_by_context).lower()}
+    try:
+        resp = requests.get(f"{API_URL}/metrics", params=params, timeout=10)
+        if resp.status_code == 200:
+            return pl.DataFrame(resp.json())
+    except Exception as e:
+        st.error(f"Error fetching metrics: {e}")
+    return pl.DataFrame()
+
+def fetch_experiments(exp_name, exp_date=None, limit=None):
+    params = {"experiment_name": exp_name, "limit": limit}
+    if exp_date:
+        params["date"] = str(exp_date)
+    try:
+        resp = requests.get(f"{API_URL}/experiments", params=params, timeout=10)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception as e:
+        st.error(f"Error fetching experiments: {e}")
+    return []
+
+def load_data(exp_name, exp_date, method, epsilon=None, c=None, tau=None):
+    allocations = fetch_allocations(exp_name, exp_date, method, epsilon, c, tau)
+    metrics = fetch_metrics(exp_name, exp_date)
+    metrics_by_context = fetch_metrics(exp_name, exp_date, group_by_context=True)
+    logs = fetch_experiments(exp_name, exp_date)
+    decision_log_df = pl.DataFrame(logs) if logs else pl.DataFrame()
+    return allocations, metrics, metrics_by_context, decision_log_df
+
+def clear_data():
+    """Remove all experiment and allocation data from backend."""
+    try:
+        delete_allocations = requests.delete(f"{API_URL}/allocations", timeout=10)
+        delete_experiments = requests.delete(f"{API_URL}/experiments", timeout=10)
+        if delete_allocations.status_code not in [200, 204]:
+            st.warning(f"Failed to delete allocations: {delete_allocations.text}")
+        if delete_experiments.status_code not in [200, 204]:
+            st.warning(f"Failed to delete experiments: {delete_experiments.text}")
+    except Exception as e:
+        st.warning(f"Error calling deletion routes: {e}")
+
+    # Clear local session data (always exclude)
+    keys_to_reset = [
+        "allocations_df", "metrics_df", "metrics_by_context_df",
+        "decision_log_df", "is_watching", "remaining_events",
+        "last_batch_sent", "refresh_key"
+    ]
+    for key in keys_to_reset:
+        if key in st.session_state:
+            if key.endswith("_df") or "allocations" in key or "metrics" in key or key == "decision_log_df":
+                st.session_state[key] = pl.DataFrame()
+            elif key == "is_watching":
+                st.session_state[key] = False
+            else:
+                st.session_state[key] = 0
+
+st.set_page_config(page_title="🧠 Bandit Brain Dashboard", layout="wide")
+
+st.title("🧠 Bandit Brain Dashboard")
+
+with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_open"]):
+    # Track any parameter that should reset the data if changed
+    param_tracker = st.session_state.get("param_tracker", {})
+
+    col1, col2 = st.columns(2, vertical_alignment="top")
+
+    with col1:
+        upload_mode = st.radio("Data Input Mode", ["Upload CSV", "Simulate data"], key="data_mode")
+        
+        experiment_name = st.text_input(
+            "Experiment Name", "homepage_test",
+            disabled=(upload_mode == "Upload CSV")
+        )
+        
+        date_selected = st.date_input(
+            "Date", date.today()
+        )
+        
+        algorithm = st.selectbox("Algorithm", ["eg", "ucb", "ts", "softmax"])
+        
+        # Variants selection
+        if "allocations_df" in st.session_state and isinstance(st.session_state.allocations_df, pl.DataFrame) and st.session_state.allocations_df.height > 0:
+            unique_variants = st.session_state.allocations_df["variant_name"].unique().to_list()
+        elif "metrics_df" in st.session_state and isinstance(st.session_state.metrics_df, pl.DataFrame) and st.session_state.metrics_df.height > 0:
+            unique_variants = st.session_state.metrics_df["variant_name"].unique().to_list()
+        else:
+            unique_variants = ["A", "B"]
+
+        if upload_mode == "Upload CSV":
+            st.markdown("<span style='color:gray;'>Variants (from CSV):</span>", unsafe_allow_html=True)
+            variants_list = st.session_state.get("variants", unique_variants)
+            st.markdown(", ".join([str(v) for v in variants_list]))
+            variants = variants_list
+        else:
+            variants = st_tags(
+                label="Variants",
+                text="Press enter to add",
+                value=st.session_state.get("variants", unique_variants),
+                suggestions=unique_variants,
+                maxtags=10,
+                key="variants"
+            )
+
+    with col2:
+        colA, colB = st.columns([2.5, 1], vertical_alignment="center")
+        with colA:
+            uploaded_file = st.file_uploader("Upload CSV file", type=["csv"], key="csv_uploader", disabled=(upload_mode == "Simulate data"))
+            if uploaded_file is not None:
+                try:
+                    df_csv = pl.read_csv(uploaded_file)
+                except Exception as e:
+                    st.error(f"Failed to read CSV: {e}")
+        with colB:
+            template_df = pl.DataFrame({
+                "variant_name": [],
+                "impressions": [],
+                "clicks": [],
+                "cost": [],
+                "device": [],
+                "location": [],
+                "user_segment": [],
+                "hour": []
+            })
+            
+            csv_bytes = template_df.write_csv()
+            b64 = base64.b64encode(csv_bytes.encode()).decode()
+
+            href = f'''
+                <a href="data:file/csv;base64,{b64}" download="csv_template.csv" style="font-size:1.1em;">Download CSV template ⬇️</a>
+            '''
+            st.markdown(href, unsafe_allow_html=True)
+                  
+        batch_size = st.number_input(
+            "Batch Size", min_value=10, max_value=10000, value=100,
+            disabled=(upload_mode == "Upload CSV")
+        )
+        
+        total_events = st.number_input(
+            "Total Events to Simulate", min_value=100, max_value=100000, value=1000,
+            disabled=(upload_mode == "Upload CSV")
+        )
+        
+        epsilon = st.slider("Epsilon (EG)", 0.0, 1.0, 0.1) if algorithm == "eg" else None
+        c_param = st.slider("C (UCB)", 0.0, 5.0, 2.0) if algorithm == "ucb" else None
+        tau = st.slider("Tau (Softmax)", 0.01, 2.0, 0.1) if algorithm == "softmax" else None
+
+    # Flag to control if the button should be enabled
+    run_enabled = False
+
+    current_params = {
+        "upload_mode": upload_mode,
+        "experiment_name": experiment_name,
+        "date": str(date_selected),
+        "algorithm": algorithm,
+        "epsilon": epsilon,
+        "c_param": c_param,
+        "tau": tau,
+        "variants": variants,
+    }
+
+    if param_tracker != current_params:
+        # If parameters have changed
+        if upload_mode == "Upload CSV" and uploaded_file is None:
+            run_enabled = False
+            st.session_state["run_enabled"] = False
+        else:
+            run_enabled = True
+            st.session_state["run_enabled"] = True
+    else:
+        run_enabled = st.session_state.get("run_enabled", False)
+
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        clear_clicked = st.button(
+            "🗑️ Clear Data",
+            key="clear_data_btn",
+            help="Delete all experiment and allocation data.",
+            width="stretch"
+        )
+        if clear_clicked:
+            clear_data()
+
+    with col2:
+        run_clicked = st.button(
+            f"🚀 Run {algorithm} Bandit Brain",
+            disabled=not run_enabled,
+            key="run_btn",
+            help="Start simulation or experiment.",
+            width="stretch"
+        )
+
+        if run_clicked:
+            # Sempre desativa botão e fecha expander após rodar
+            st.session_state["run_enabled"] = False
+            st.session_state["expander_open"] = False
+
+            if upload_mode == "Upload CSV":
+                if df_csv is not None:
+                    batch = []
+                    
+                    for row in df_csv.iter_rows(named=True):
+                        context = {}
+                        for ctx_field in ["device", "location", "user_segment", "hour"]:
+                            if ctx_field in row:
+                                context[ctx_field] = row[ctx_field]
+                        batch.append({
+                            "experiment_name": st.session_state.get("experiment_name", "homepage_test"),
+                            "variant_name": row.get("variant_name", "A"),
+                            "impressions": int(row.get("impressions", 1)),
+                            "clicks": int(row.get("clicks", 0)),
+                            "event_date": str(date_selected),
+                            "cost": float(row.get("cost", 0.0)),
+                            "context": context,
+                        })
+                        
+                    n_rows = len(batch)
+                    batch_size = max(1, n_rows // 10)
+                    success = True
+                    
+                    for i in range(0, n_rows, batch_size):
+                        batch_slice = batch[i:i+batch_size]
+                        try:
+                            resp = requests.post(f"{API_URL}/ingest", json=batch_slice, timeout=10)
+                            if resp.status_code == 200:
+                                continue
+                            else:
+                                st.error(f"Failed to send CSV: {resp.text}")
+                                success = False
+                        except Exception as e:
+                            st.error(f"Error sending CSV: {e}")
+                            success = False
+                            
+                    if success:
+                        a, m, mbc, decision_log_df = load_data(experiment_name, date_selected, algorithm, epsilon, c_param, tau)
+                        st.session_state["allocations_df"] = a if isinstance(a, pl.DataFrame) else pl.DataFrame()
+                        st.session_state["metrics_df"] = m if isinstance(m, pl.DataFrame) else pl.DataFrame()
+                        st.session_state["metrics_by_context_df"] = mbc if isinstance(mbc, pl.DataFrame) else pl.DataFrame()
+                        st.session_state["decision_log_df"] = decision_log_df if isinstance(decision_log_df, pl.DataFrame) else pl.DataFrame()
+                        st.session_state.is_watching = False
+                        st.session_state.remaining_events = 0
+                        st.session_state.last_batch_sent = n_rows
+                        st.session_state.refresh_key = st.session_state.get("refresh_key", 0) + 1
+                else:
+                    st.error("No CSV file uploaded.")
+            elif upload_mode == "Simulate data":
+                st.session_state.is_watching = True
+                st.session_state.remaining_events = int(total_events)
+                st.session_state.last_batch_sent = 0
+                st.session_state.refresh_key = st.session_state.get("refresh_key", 0) + 1
 
 # ---------------------------
 # API FUNCTIONS 
@@ -71,81 +342,10 @@ def load_data(exp_name, exp_date, method, epsilon=None, c=None, tau=None):
     return allocations, metrics, metrics_by_context, decision_log_df
 
 # ---------------------------
-# SIDEBAR CONTROLS
-# ---------------------------
-st.sidebar.header("Experiment Configuration")
-
-# Track any parameter that should reset the data if changed
-param_tracker = st.session_state.get("param_tracker", {})
-
-experiment_name = st.sidebar.text_input("Experiment Name", "homepage_test")
-date_selected = st.sidebar.date_input("Date", date.today())
-algorithm = st.sidebar.selectbox("Algorithm", ["eg", "ucb", "ts", "softmax"])
-epsilon = st.sidebar.slider("Epsilon (EG)", 0.0, 1.0, 0.1) if algorithm == "eg" else None
-c_param = st.sidebar.slider("C (UCB)", 0.0, 5.0, 2.0) if algorithm == "ucb" else None
-tau = st.sidebar.slider("Tau (Softmax)", 0.01, 2.0, 0.1) if algorithm == "softmax" else None
-batch_size = st.sidebar.number_input("Batch Size", min_value=10, max_value=10000, value=100)
-total_events = st.sidebar.number_input("Total Events to Simulate", min_value=100, max_value=100000, value=1000)
-
-# ---------------------------
-# VARIANTS SELECTION IN SIDEBAR
-# ---------------------------
-with st.sidebar:
-    if "allocations_df" in st.session_state and isinstance(st.session_state.allocations_df, pl.DataFrame) and st.session_state.allocations_df.height > 0:
-        unique_variants = st.session_state.allocations_df["variant_name"].unique().to_list()
-    elif "metrics_df" in st.session_state and isinstance(st.session_state.metrics_df, pl.DataFrame) and st.session_state.metrics_df.height > 0:
-        unique_variants = st.session_state.metrics_df["variant_name"].unique().to_list()
-    else:
-        unique_variants = ["A", "B"]
-
-    variants = st_tags(
-        label="Variants",
-        text="Press enter to add",
-        value=st.session_state.get("variants", unique_variants),
-        suggestions=unique_variants,
-        maxtags=10,
-        key="variants",
-    )
-
-# ---------------------------
 # RESET SESSION IF PARAMETERS CHANGE
 # ---------------------------
-current_params = {
-    "experiment_name": experiment_name,
-    "date": str(date_selected),
-    "algorithm": algorithm,
-    "epsilon": epsilon,
-    "c_param": c_param,
-    "tau": tau,
-    "variants": variants,
-}
-
 if param_tracker != current_params:
-    # Remove/reset all data related to the simulation from st.session_state
-    keys_to_reset = [
-    "allocations_df", "metrics_df", "metrics_by_context_df",
-    "decision_log_df", "is_watching", "remaining_events",
-    "last_batch_sent", "refresh_key"
-    ]
-    for key in keys_to_reset:
-        if key in st.session_state:
-            if key.endswith("_df") or "allocations" in key or "metrics" in key or key == "decision_log_df":
-                st.session_state[key] = pl.DataFrame()
-            elif key == "is_watching":
-                st.session_state[key] = False
-            else:
-                st.session_state[key] = 0
-
-    # Clear backend deletion routes
-    try:
-        r1 = requests.delete(f"{API_URL}/allocations", timeout=10)
-        r2 = requests.delete(f"{API_URL}/experiments", timeout=10)
-        if r1.status_code not in [200, 204]:
-            st.warning(f"Failed to delete allocations: {r1.text}")
-        if r2.status_code not in [200, 204]:
-            st.warning(f"Failed to delete experiments: {r2.text}")
-    except Exception as e:
-        st.warning(f"Error calling deletion routes: {e}")
+    clear_data()
 
     # Reinitialize session state variables
     st.session_state["allocations_df"] = st.session_state.get("allocations_df", pl.DataFrame())
@@ -168,28 +368,6 @@ if param_tracker != current_params:
 for key in ["is_watching", "remaining_events", "last_batch_sent", "refresh_key"]:
     if key not in st.session_state:
         st.session_state[key] = 0 if "remaining" in key or "last_batch" in key else False
-
-# ---------------------------
-# LOAD INITIAL DATA
-# ---------------------------
-# If the session does not have allocations/metrics loaded (or they are empty), fetch them
-need_load = False
-if "allocations_df" not in st.session_state:
-    need_load = True
-else:
-    try:
-        if isinstance(st.session_state.allocations_df, pl.DataFrame) and st.session_state.allocations_df.height == 0:
-            need_load = True
-    except Exception:
-        need_load = True
-
-if need_load:
-    a, m, mbc, decision_log_df = load_data(experiment_name, date_selected, algorithm, epsilon, c_param, tau)
-    st.session_state["allocations_df"] = a if isinstance(a, pl.DataFrame) else pl.DataFrame()
-    st.session_state["metrics_df"] = m if isinstance(m, pl.DataFrame) else pl.DataFrame()
-    st.session_state["metrics_by_context_df"] = mbc if isinstance(mbc, pl.DataFrame) else pl.DataFrame()
-    st.session_state["decision_log_df"] = decision_log_df if isinstance(decision_log_df, pl.DataFrame) else pl.DataFrame()
-    st.session_state["simulation_enabled"] = True
 
 # ---------------------------
 # Local Variables
@@ -262,20 +440,12 @@ def simulate_events(n_events=1000):
 # ---------------------------
 
 # Flag to control if the button should be enabled
-simulation_enabled = False
+run_enabled = False
 if param_tracker != current_params:
-    simulation_enabled = True
-    st.session_state["simulation_enabled"] = True
+    run_enabled = True
+    st.session_state["run_enabled"] = True
 else:
-    simulation_enabled = st.session_state.get("simulation_enabled", False)
-
-with st.sidebar:
-    if st.button(f"▶️ Start Simulation for {algorithm}", disabled=not simulation_enabled):
-        st.session_state.is_watching = True
-        st.session_state.remaining_events = int(total_events)
-        st.session_state.last_batch_sent = 0
-        st.session_state.refresh_key = st.session_state.get("refresh_key", 0) + 1
-        st.session_state["simulation_enabled"] = False
+    run_enabled = st.session_state.get("run_enabled", False)
 
 if st.session_state.is_watching:
     st_autorefresh(interval=1000, limit=None, key=f"live_watch_{st.session_state.refresh_key}")
@@ -297,7 +467,6 @@ if st.session_state.is_watching:
             decision_log_df = st.session_state.get("decision_log_df", pl.DataFrame())
     else:
         st.session_state.is_watching = False
-        st.sidebar.success("✅ Simulation completed.")
 
 # ---------------------------
 # DASHBOARD DISPLAY
