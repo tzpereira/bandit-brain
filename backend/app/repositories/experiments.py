@@ -100,13 +100,13 @@ def get_experiments_metrics(
             CASE WHEN clicks > 0 THEN total_cost / clicks ELSE NULL END AS cpc,
             CASE WHEN impressions > 0 THEN total_cost / impressions ELSE NULL END AS cpv,
             CASE WHEN impressions > 0 THEN clicks::float / impressions ELSE 0 END AS ctr,
-            CASE WHEN impressions > 0 THEN
+            CASE WHEN impressions > 0 AND ((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions) >= 0 THEN
                 SQRT((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions)
             ELSE 0 END AS ctr_se,
-            CASE WHEN impressions > 0 THEN
+            CASE WHEN impressions > 0 AND ((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions) >= 0 THEN
                 GREATEST((clicks::float / impressions) - 1.96 * SQRT((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions), 0)
             ELSE 0 END AS ctr_ci_lower,
-            CASE WHEN impressions > 0 THEN
+            CASE WHEN impressions > 0 AND ((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions) >= 0 THEN
                 (clicks::float / impressions) + 1.96 * SQRT((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions)
             ELSE 0 END AS ctr_ci_upper
         FROM agg
