@@ -1,3 +1,4 @@
+import os
 import base64
 import random
 import requests
@@ -8,7 +9,7 @@ import plotly.express as px
 from streamlit_tags import st_tags
 from streamlit_autorefresh import st_autorefresh
 
-API_URL = "http://backend:8000"
+API_URL = os.getenv("API_URL")
 
 def fetch_allocations(exp_name, exp_date, method, epsilon=None, c=None, tau=None):
     if not isinstance(exp_date, (date, datetime)):
