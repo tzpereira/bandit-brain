@@ -1,5 +1,6 @@
-backend/.venv/
-__pycache__/
 .env
-scripts/.venv/
+__pycache__/
 experimentation/
+scripts/.venv/
+backend/.venv/
+dashboard/.venv/
