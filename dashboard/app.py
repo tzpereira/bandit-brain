@@ -650,3 +650,10 @@ st.markdown("""
         <span>Made by <a href='https://github.com/tzpereira' target='_blank' style='color:#FF69B4; text-decoration:none;'><b>Mateus</b></a> &middot; Powered by Streamlit</span>
     </div>
 """, unsafe_allow_html=True)
+
+def on_session_end():
+    """Callback to clear all user data when session ends (tab closed or refreshed)."""
+    clear_data()
+
+if hasattr(st, "on_session_end"):
+    st.on_session_end(on_session_end)
