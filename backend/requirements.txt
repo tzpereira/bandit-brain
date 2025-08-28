@@ -1,4 +1,7 @@
 fastapi
+dotenv
+PyJWT
+bcrypt
 numpy
 uvicorn
 psycopg2-binary
