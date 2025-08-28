@@ -21,6 +21,8 @@ Bandit Brain is a robust experimentation and recommendation platform based on Mu
 - [Models](#models)
 - [Getting Started](#getting-started)
 - [API Documentation](#api-documentation)
+	- [Sign up](#signup)
+	- [Login](#login)
 	- [Ingest Experiments](#ingest-experiments)
 	- [Recommend Allocations](#recommend-allocations)
 	- [List Experiments](#list-experiments)
@@ -187,7 +189,73 @@ You can download a CSV template directly from the dashboard interface.
 
 ---
 
+## Authentication & JWT Usage
+
+All API usage requires user authentication. You must create an account and use a JWT token for all protected routes.
+
+**How to authenticate:**
+
+1. Create an account using `/signup`.
+2. Log in using `/login` to receive a JWT token.
+3. For all protected routes, include the JWT token in the `Authorization` header as:
+	 ```
+	 Authorization: Bearer <your-jwt-token>
+	 ```
+
+**Note:** If the JWT token is missing or invalid, requests to protected endpoints will be rejected.
+
+---
+
 ## API Documentation
+### Signup
+
+**POST /signup**
+
+Create a new user account.
+
+**Payload Example:**
+```json
+{
+	"email": "user@example.com",
+	"password": "yourpassword"
+}
+```
+
+**Response Example:**
+```json
+{
+	"user_id": 1,
+	"email": "user@example.com"
+}
+```
+
+---
+
+### Login
+
+**POST /login**
+
+Authenticate an existing user and receive a JWT token.
+
+**Payload Example:**
+```json
+{
+	"email": "user@example.com",
+	"password": "yourpassword"
+}
+```
+
+**Response Example:**
+```json
+{
+	"access_token": "<jwt-token>",
+	"token_type": "bearer"
+}
+```
+
+---
+
+> **All routes below require the JWT token in the Authorization header.**
 ### Ingest Experiments
 
 **POST /ingest**

@@ -1,15 +1,23 @@
 import os
+from dotenv import load_dotenv
 import base64
 import random
 import requests
 import polars as pl
 import streamlit as st
 from datetime import date, datetime, timedelta
+from components.login_form import login_form
 import plotly.express as px
 from streamlit_tags import st_tags
 from streamlit_autorefresh import st_autorefresh
 
+load_dotenv()
+
 API_URL = os.getenv("API_URL")
+
+if "jwt_token" not in st.session_state:
+    login_form(API_URL)
+    st.stop()
 
 def fetch_allocations(exp_name, exp_date, method, epsilon=None, c=None, tau=None):
     if not isinstance(exp_date, (date, datetime)):
@@ -24,8 +32,9 @@ def fetch_allocations(exp_name, exp_date, method, epsilon=None, c=None, tau=None
         payload["c"] = c
     if method == "softmax" and tau is not None:
         payload["tau"] = tau
+    headers = {"Authorization": f"Bearer {st.session_state['jwt_token']}"}
     try:
-        resp = requests.post(f"{API_URL}/recommend", json=payload, timeout=10)
+        resp = requests.post(f"{API_URL}/recommend", json=payload, headers=headers, timeout=10)
         if resp.status_code == 200:
             return pl.DataFrame(resp.json())
     except Exception as e:
@@ -34,8 +43,9 @@ def fetch_allocations(exp_name, exp_date, method, epsilon=None, c=None, tau=None
 
 def fetch_metrics(exp_name, exp_date, group_by_context=False):
     params = {"experiment_name": exp_name, "date": str(exp_date), "group_by_context": str(group_by_context).lower()}
+    headers = {"Authorization": f"Bearer {st.session_state['jwt_token']}"}
     try:
-        resp = requests.get(f"{API_URL}/metrics", params=params, timeout=10)
+        resp = requests.get(f"{API_URL}/metrics", params=params, headers=headers, timeout=10)
         if resp.status_code == 200:
             return pl.DataFrame(resp.json())
     except Exception as e:
@@ -46,8 +56,9 @@ def fetch_experiments(exp_name, exp_date=None, limit=None):
     params = {"experiment_name": exp_name, "limit": limit}
     if exp_date:
         params["date"] = str(exp_date)
+    headers = {"Authorization": f"Bearer {st.session_state['jwt_token']}"}
     try:
-        resp = requests.get(f"{API_URL}/experiments", params=params, timeout=10)
+        resp = requests.get(f"{API_URL}/experiments", params=params, headers=headers, timeout=10)
         if resp.status_code == 200:
             return resp.json()
     except Exception as e:
@@ -64,9 +75,10 @@ def load_data(exp_name, exp_date, method, epsilon=None, c=None, tau=None):
 
 def clear_data():
     """Remove all experiment and allocation data from backend."""
+    headers = {"Authorization": f"Bearer {st.session_state['jwt_token']}"}
     try:
-        delete_allocations = requests.delete(f"{API_URL}/allocations", timeout=10)
-        delete_experiments = requests.delete(f"{API_URL}/experiments", timeout=10)
+        delete_allocations = requests.delete(f"{API_URL}/allocations", headers=headers, timeout=10)
+        delete_experiments = requests.delete(f"{API_URL}/experiments", headers=headers, timeout=10)
         if delete_allocations.status_code not in [200, 204]:
             st.warning(f"Failed to delete allocations: {delete_allocations.text}")
         if delete_experiments.status_code not in [200, 204]:
@@ -259,7 +271,8 @@ with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_op
                     for i in range(0, n_rows, batch_size):
                         batch_slice = batch[i:i+batch_size]
                         try:
-                            resp = requests.post(f"{API_URL}/ingest", json=batch_slice, timeout=10)
+                            headers = {"Authorization": f"Bearer {st.session_state['jwt_token']}"}
+                            resp = requests.post(f"{API_URL}/ingest", json=batch_slice, headers=headers, timeout=10)
                             if resp.status_code == 200:
                                 continue
                             else:
@@ -433,7 +446,8 @@ def simulate_events(n_events=1000):
 
     if batch:
         try:
-            resp = requests.post(f"{API_URL}/ingest", json=batch, timeout=10)
+            headers = {"Authorization": f"Bearer {st.session_state['jwt_token']}"}  
+            resp = requests.post(f"{API_URL}/ingest", json=batch, headers=headers, timeout=10)
             return resp.status_code == 200
         except Exception as e:
             st.error(f"Error sending events: {e}")

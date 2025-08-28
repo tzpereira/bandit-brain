@@ -8,7 +8,7 @@ import logging
 import numpy as np
 from typing import List, Optional
 from app.models import Metric, Allocation
-from app.utils import get_prediction_date
+from app.utils.utils import get_prediction_date
 
 
 ###############################################################

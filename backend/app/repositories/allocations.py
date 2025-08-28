@@ -1,10 +1,11 @@
-from app.utils import serialize_row
+from app.utils.utils import serialize_row
 from app.config import get_db_connection
 from typing import Optional, List
 from app.models import Allocation
 
 
 def get_allocations(
+    user_id: int,
     experiment_name: Optional[str] = None,
     date: Optional[str] = None,
     algorithm: Optional[str] = None,
@@ -24,6 +25,9 @@ def get_allocations(
     params = []
     where_clauses = []
 
+    where_clauses.append('user_id = %s')
+    params.append(user_id)
+    
     if experiment_name:
         where_clauses.append('experiment_name = %s')
         params.append(experiment_name)
@@ -47,7 +51,7 @@ def get_allocations(
     return [Allocation(**serialize_row(row, columns)) for row in rows]
 
 
-def insert_allocation(data: Allocation) -> None:
+def insert_allocation(data: Allocation, user_id: int) -> None:
     """
     Inserts a new allocation record into the database.
     Expects an Allocation object.
@@ -57,10 +61,11 @@ def insert_allocation(data: Allocation) -> None:
 
     cur.execute(
         '''
-        INSERT INTO allocations (experiment_name, variant_name, allocated_pct, algorithm, date)
-        VALUES (%s, %s, %s, %s, %s);
+        INSERT INTO allocations (user_id, experiment_name, variant_name, allocated_pct, algorithm, date)
+        VALUES (%s, %s, %s, %s, %s, %s);
         ''',
         (
+            user_id,
             data.experiment_name,
             data.variant_name,
             data.allocated_pct,
@@ -73,30 +78,31 @@ def insert_allocation(data: Allocation) -> None:
     conn.close()
 
 
-def insert_allocations_batch(data_list: List[Allocation]) -> None:
+def insert_allocations_batch(allocations: List[Allocation], user_id: int) -> None:
     """
     Inserts multiple allocation records into the database in a single batch.
     Expects a list of Allocation objects.
     """
-    if not data_list:
+    if not allocations:
         return
     conn = get_db_connection()
     cur = conn.cursor()
     values = [
         (
+            user_id,
             d.experiment_name,
             d.variant_name,
             d.allocated_pct,
             d.algorithm,
             d.date
         )
-        for d in data_list
+        for d in allocations
     ]
     cur.executemany(
         '''
-        INSERT INTO allocations (experiment_name, variant_name, allocated_pct, algorithm, date)
-        VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT (experiment_name, variant_name, algorithm, date)
+        INSERT INTO allocations (user_id, experiment_name, variant_name, allocated_pct, algorithm, date)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (user_id, experiment_name, variant_name, algorithm, date)
         DO UPDATE SET allocated_pct = EXCLUDED.allocated_pct, created_at = NOW();
         ''',
         values
@@ -106,14 +112,14 @@ def insert_allocations_batch(data_list: List[Allocation]) -> None:
     conn.close()
 
 
-def delete_allocations():
+def delete_allocations(user_id: int):
     """
     Delete all allocation records from the database.
     TODO: Implement conditional deletion based on parameters.
     """
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM allocations;")
+    cur.execute("DELETE FROM allocations WHERE user_id = %s;", (user_id,))
     conn.commit()
     cur.close()
     conn.close()

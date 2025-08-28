@@ -6,6 +6,10 @@ services:
     depends_on:
       - db
     environment:
+      API_URL: ${API_URL}
+      HASH_SECRET_KEY: ${HASH_SECRET_KEY}
+      HASH_ALGORITHM: ${HASH_ALGORITHM}
+      HASH_TOKEN_EXPIRE_MINUTES: ${HASH_TOKEN_EXPIRE_MINUTES}
       DATABASE_URL: ${DATABASE_URL}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -19,6 +23,8 @@ services:
       - "8501:8501"
     depends_on:
       - backend
+    environment:
+      API_URL: ${API_URL}
     networks:
       - bandit-net
 

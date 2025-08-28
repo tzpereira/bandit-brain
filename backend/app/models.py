@@ -1,5 +1,11 @@
-from pydantic import BaseModel
 from typing import Optional
+from pydantic import BaseModel
+
+class User(BaseModel):
+    id: int
+    email: str
+    password: str
+    created_at: str
 
 class Experiment(BaseModel):
     id: Optional[int] = None
