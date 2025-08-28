@@ -2,14 +2,15 @@ import json
 from typing import Optional, List
 from app.models import Metric
 from app.config import get_db_connection
-from app.utils import serialize_row
+from app.utils.utils import serialize_row
 from app.models import Experiment
 
 
 def get_experiments(
+    user_id: int,
     experiment_name: Optional[str] = None,
     date: Optional[str] = None,
-    limit: Optional[int] = 10000
+    limit: Optional[int] = None
 ) -> List[Experiment]:
     """
     Retrieve experiment records, optionally filtered by experiment_name and date.
@@ -24,6 +25,9 @@ def get_experiments(
     '''
     params = []
     where_clauses = []
+
+    where_clauses.append('user_id = %s')
+    params.append(user_id)
 
     if experiment_name:
         where_clauses.append('experiment_name = %s')
@@ -49,6 +53,7 @@ def get_experiments(
 
 
 def get_experiments_metrics(
+    user_id: int,
     experiment_name: Optional[str] = None,
     date: Optional[str] = None,
     group_by_context: bool = False
@@ -116,6 +121,9 @@ def get_experiments_metrics(
     params = []
     where_clauses = []
 
+    where_clauses.append('user_id = %s')
+    params.append(user_id)
+    
     if experiment_name:
         where_clauses.append('experiment_name = %s')
         params.append(experiment_name)
@@ -154,17 +162,18 @@ def get_experiments_metrics(
     return [Metric(**m) for m in metrics]
 
 
-def insert_experiments_batch(data_list: List[Experiment]) -> None:
+def insert_experiments_batch(user_id: int, experiments: List[Experiment]) -> None:
     """
     Inserts multiple experiment records into the database in a single batch.
     Expects a list of Experiment objects.
     """
-    if not data_list:
+    if not experiments:
         return
     conn = get_db_connection()
     cur = conn.cursor()
     values = [
         (
+            user_id,
             d.experiment_name,
             d.variant_name,
             d.impressions,
@@ -173,12 +182,12 @@ def insert_experiments_batch(data_list: List[Experiment]) -> None:
             d.event_date,
             json.dumps(d.context) if d.context is not None else None
         )
-        for d in data_list
+        for d in experiments
     ]
     cur.executemany(
         '''
-        INSERT INTO experiments (experiment_name, variant_name, impressions, clicks, cost, event_date, context)
-        VALUES (%s, %s, %s, %s, %s, %s, %s);
+        INSERT INTO experiments (user_id, experiment_name, variant_name, impressions, clicks, cost, event_date, context)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
         ''',
         values
     )
@@ -186,15 +195,15 @@ def insert_experiments_batch(data_list: List[Experiment]) -> None:
     cur.close()
     conn.close()
 
-    
-def delete_experiments():
+
+def delete_experiments(user_id: int):
     """
     Delete all experiment records from the database.
     TODO: Implement conditional deletion based on parameters.
     """
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM experiments;")
+    cur.execute("DELETE FROM experiments WHERE user_id = %s;", (user_id,))
     conn.commit()
     cur.close()
     conn.close()
