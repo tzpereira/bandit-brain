@@ -1,16 +1,11 @@
-import os
-from dotenv import load_dotenv
 import requests
 import streamlit as st
 
-load_dotenv()
-
-API_URL = os.getenv("API_URL")
-
-def login_form():
-    st.title("Login or Sign Up to 🧠 Bandit Brain")
+def login_form(API_URL: str):
+    st.title("Login or Sign Up to Bandit Brain 🧠")
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
+    
     col1, col2 = st.columns(2)
     with col1:
         login_clicked = st.button("Sign In", key="login", width="stretch")

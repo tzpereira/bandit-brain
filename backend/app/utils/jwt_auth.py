@@ -9,7 +9,7 @@ load_dotenv()
 
 SECRET_KEY = os.getenv("HASH_SECRET_KEY")
 ALGORITHM = os.getenv("HASH_ALGORITHM")
-TOKEN_EXPIRE_MINUTES = os.getenv("HASH_TOKEN_EXPIRE_MINUTES")
+TOKEN_EXPIRE_MINUTES = int(os.getenv("HASH_TOKEN_EXPIRE_MINUTES"))
 
 security = HTTPBearer()
 
