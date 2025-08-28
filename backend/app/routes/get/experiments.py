@@ -8,11 +8,11 @@ router = APIRouter()
 
 @router.get("/experiments", response_model=List[Experiment])
 def list_experiments(
-    user_id: int = Depends(verify_token),
     experiment_name: Optional[str] = None,
     date: Optional[str] = None,
-    limit: Optional[int] = None
-):
+    limit: Optional[int] = None,
+    user_id: int = Depends(verify_token)
+    ):
     """
     List experiments, optionally filtered by experiment_name and date.
     """

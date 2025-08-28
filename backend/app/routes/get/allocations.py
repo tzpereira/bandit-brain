@@ -8,11 +8,11 @@ router = APIRouter()
 
 @router.get("/allocations", response_model=List[Allocation])
 def list_allocations(
-    user_id: int = Depends(verify_token),
     experiment_name: Optional[str] = None,
     date: Optional[str] = None,
     algorithm: Optional[str] = None,
-    limit: Optional[int] = None
+    limit: Optional[int] = None,
+    user_id: int = Depends(verify_token)
 ):
     """
     List allocations with optional filters: experiment_name, date, and limit.

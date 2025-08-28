@@ -8,10 +8,10 @@ router = APIRouter()
 
 @router.get("/metrics", response_model=List[Metric])
 def get_metrics(
-    user_id: int = Depends(verify_token),
     experiment_name: Optional[str] = None,
     date: Optional[str] = None,
-    group_by_context: bool = False
+    group_by_context: bool = False,
+    user_id: int = Depends(verify_token)
 ):
     """
     Returns aggregated metrics (impressions, clicks, CTR) for each variant, with optional filters.
