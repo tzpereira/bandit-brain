@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 from app.models import Allocation
+from app.utils.jwt_auth import verify_token
 from app.repositories.experiments import get_experiments_metrics
 from app.repositories.allocations import insert_allocations_batch
 from app.services.mab import EpsilonGreedyBandit, UCBBandit, ThompsonSamplingBandit, SoftmaxBandit
@@ -34,7 +35,7 @@ class RecommendRequest(BaseModel):
         return self
 
 @router.post("/recommend", response_model=List[Allocation])
-def recommend_allocation(request: RecommendRequest = Body(...)):
+def recommend_allocation(request: RecommendRequest = Body(...), user_id: int = Depends(verify_token)):
     """
     Returns recommended allocation for experiment variants using the chosen algorithm.
     """
@@ -56,10 +57,9 @@ def recommend_allocation(request: RecommendRequest = Body(...)):
             raise HTTPException(status_code=400, detail="Invalid method. Use 'eg', 'ucb', 'ts' or 'softmax'.")
 
         allocations = bandit.get_allocation()
-
+        
         # Persist allocations to the database
-        insert_allocations_batch(allocations)
-
+        insert_allocations_batch(allocations, user_id=int(user_id))
         return allocations
     except HTTPException as e:
         raise e

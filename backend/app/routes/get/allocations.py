@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from app.utils.jwt_auth import verify_token
 from typing import List, Optional
 from app.repositories.allocations import get_allocations
 from app.models import Allocation
@@ -7,6 +8,7 @@ router = APIRouter()
 
 @router.get("/allocations", response_model=List[Allocation])
 def list_allocations(
+    user_id: int = Depends(verify_token),
     experiment_name: Optional[str] = None,
     date: Optional[str] = None,
     algorithm: Optional[str] = None,
@@ -16,6 +18,7 @@ def list_allocations(
     List allocations with optional filters: experiment_name, date, and limit.
     """
     allocations = get_allocations(
+        user_id=user_id,
         experiment_name=experiment_name,
         date=date,
         algorithm=algorithm,

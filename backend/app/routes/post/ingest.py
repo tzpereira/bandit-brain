@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, RootModel
 from typing import List
 from app.repositories.experiments import insert_experiments_batch
+from app.utils.jwt_auth import verify_token
 from app.models import Experiment
 from app.validators.validation import (
     validate_non_empty_string,
@@ -44,7 +45,7 @@ def to_ingest_request(item):
         return IngestRequest(**item.dict())
 
 @router.post("/ingest", response_model=dict)
-def ingest_experiment(request: IngestBatch):
+def ingest_experiment(request: IngestBatch, user_id: int = Depends(verify_token)):
     """
     Ingest one or more experiment events.
     Accepts a list of objects (array JSON).
@@ -65,10 +66,8 @@ def ingest_experiment(request: IngestBatch):
         experiments = [Experiment(**obj.dict()) for obj in validated]
 
         # Persist experiments to the database
-        insert_experiments_batch(experiments)
-        
+        insert_experiments_batch(user_id=int(user_id), experiments=experiments)
+
         return {"status": "success"}
-    except HTTPException as e:
-        raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
