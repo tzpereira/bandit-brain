@@ -41,7 +41,7 @@ def recommend_allocation(request: RecommendRequest = Body(...), user_id: int = D
     """
     try:
         req = request.validate()
-        metrics = get_experiments_metrics(experiment_name=req.experiment_name, date=req.date)
+        metrics = get_experiments_metrics(user_id=user_id, experiment_name=req.experiment_name, date=req.date)
         if not metrics:
             raise HTTPException(status_code=404, detail="No metrics found for the specified experiment.")
 

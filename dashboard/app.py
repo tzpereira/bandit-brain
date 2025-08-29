@@ -301,64 +301,6 @@ with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_op
                 st.session_state.refresh_key = st.session_state.get("refresh_key", 0) + 1
 
 # ---------------------------
-# API FUNCTIONS 
-# ---------------------------
-def fetch_allocations(exp_name, exp_date, method, epsilon=None, c=None, tau=None):
-    if not isinstance(exp_date, (date, datetime)):
-        exp_date_obj = date.fromisoformat(str(exp_date))
-    else:
-        # garante que, se for datetime, converte para date
-        exp_date_obj = exp_date.date() if isinstance(exp_date, datetime) else exp_date
-
-    prediction_date = exp_date_obj + timedelta(days=1)
-
-    payload = {"experiment_name": exp_name, "date": str(prediction_date), "method": method}
-    
-    if method == "eg" and epsilon is not None:
-        payload["epsilon"] = epsilon
-    if method == "ucb" and c is not None:
-        payload["c"] = c
-    if method == "softmax" and tau is not None:
-        payload["tau"] = tau
-    try:
-        resp = requests.post(f"{API_URL}/recommend", json=payload, timeout=10)
-        if resp.status_code == 200:
-            return pl.DataFrame(resp.json())
-    except Exception as e:
-        st.error(f"Error fetching allocations: {e}")
-    return pl.DataFrame()
-
-def fetch_metrics(exp_name, exp_date, group_by_context=False):
-    params = {"experiment_name": exp_name, "date": str(exp_date), "group_by_context": str(group_by_context).lower()}
-    try:
-        resp = requests.get(f"{API_URL}/metrics", params=params, timeout=10)
-        if resp.status_code == 200:
-            return pl.DataFrame(resp.json())
-    except Exception as e:
-        st.error(f"Error fetching metrics: {e}")
-    return pl.DataFrame()
-
-def fetch_experiments(exp_name, exp_date=None, limit=None):
-    params = {"experiment_name": exp_name, "limit": limit}
-    if exp_date:
-        params["date"] = str(exp_date)
-    try:
-        resp = requests.get(f"{API_URL}/experiments", params=params, timeout=10)
-        if resp.status_code == 200:
-            return resp.json()
-    except Exception as e:
-        st.error(f"Error fetching experiments: {e}")
-    return []
-
-def load_data(exp_name, exp_date, method, epsilon=None, c=None, tau=None):
-    allocations = fetch_allocations(exp_name, exp_date, method, epsilon, c, tau)
-    metrics = fetch_metrics(exp_name, exp_date)
-    metrics_by_context = fetch_metrics(exp_name, exp_date, group_by_context=True)
-    logs = fetch_experiments(exp_name, exp_date)
-    decision_log_df = pl.DataFrame(logs) if logs else pl.DataFrame()
-    return allocations, metrics, metrics_by_context, decision_log_df
-
-# ---------------------------
 # RESET SESSION IF PARAMETERS CHANGE
 # ---------------------------
 if param_tracker != current_params:
