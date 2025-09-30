@@ -115,11 +115,18 @@ with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_op
     col1, col2 = st.columns(2, vertical_alignment="top")
 
     with col1:
-        upload_mode = st.radio("Data Input Mode", ["Upload CSV", "Simulate data"], key="data_mode")
+        upload_mode = st.radio("Data Input Mode", ["Upload historical data (CSV)", "Simulate live data"], key="data_mode")
+        
+        # Orientation message for each mode
+        if upload_mode == "Upload historical data (CSV)":
+            st.markdown("<span style='color:gray;'>Upload a CSV file with historical experiment data. Only aggregate visualizations will be shown.</span>", unsafe_allow_html=True)
+        else:
+            st.markdown("<span style='color:gray;'>Simulate live data for step-by-step bandit learning and visualizations.</span>", unsafe_allow_html=True)
+        
         
         experiment_name = st.text_input(
             "Experiment Name", "homepage_test",
-            disabled=(upload_mode == "Upload CSV")
+            disabled=(upload_mode == "Upload historical data (CSV)")
         )
         
         date_selected = st.date_input(
@@ -136,7 +143,7 @@ with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_op
         else:
             unique_variants = ["A", "B"]
 
-        if upload_mode == "Upload CSV":
+        if upload_mode == "Upload historical data (CSV)":
             st.markdown("<span style='color:gray;'>Variants (from CSV):</span>", unsafe_allow_html=True)
             variants_list = st.session_state.get("variants", unique_variants)
             st.markdown(", ".join([str(v) for v in variants_list]))
@@ -182,12 +189,11 @@ with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_op
                   
         batch_size = st.number_input(
             "Batch Size", min_value=10, max_value=10000, value=100,
-            disabled=(upload_mode == "Upload CSV")
+            disabled=(upload_mode == "Upload historical data (CSV)")
         )
-        
         total_events = st.number_input(
             "Total Events to Simulate", min_value=100, max_value=100000, value=1000,
-            disabled=(upload_mode == "Upload CSV")
+            disabled=(upload_mode == "Upload historical data (CSV)")
         )
         
         epsilon = st.slider("Epsilon (EG)", 0.0, 1.0, 0.1) if algorithm == "eg" else None
@@ -208,9 +214,9 @@ with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_op
         "variants": variants,
     }
 
+    # Button enabled logic
     if param_tracker != current_params:
-        # If parameters have changed
-        if upload_mode == "Upload CSV" and uploaded_file is None:
+        if upload_mode == "Upload historical data (CSV)" and uploaded_file is None:
             run_enabled = False
             st.session_state["run_enabled"] = False
         else:
@@ -245,7 +251,7 @@ with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_op
             st.session_state["run_enabled"] = False
             st.session_state["expander_open"] = False
 
-            if upload_mode == "Upload CSV":
+            if upload_mode == "Upload historical data (CSV)":
                 if df_csv is not None:
                     batch = []
                     
@@ -294,7 +300,7 @@ with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_op
                         st.session_state.refresh_key = st.session_state.get("refresh_key", 0) + 1
                 else:
                     st.error("No CSV file uploaded.")
-            elif upload_mode == "Simulate data":
+            elif upload_mode == "Simulate live data":
                 st.session_state.is_watching = True
                 st.session_state.remaining_events = int(total_events)
                 st.session_state.last_batch_sent = 0
@@ -357,43 +363,57 @@ def simulate_events(n_events=1000):
     USER_SEGMENTS = ["new_user", "returning_user", "vip"]
     BASE_CTR = {v: random.uniform(0.04, 0.07) for v in variant_list}
 
-    batch = []
-
+    success = True
+    headers = {"Authorization": f"Bearer {st.session_state['jwt_token']}"}
+    events = []
     for _ in range(n_events):
         variant = random.choice(variant_list)
         device = random.choice(DEVICES)
         location = random.choice(LOCATIONS)
         segment = random.choice(USER_SEGMENTS)
         hour = random.randint(0, 23)
-        impressions = random.randint(1, 5)
         ctr = BASE_CTR[variant]
         ctr *= 1.1 if device == "mobile" else 0.9 if device == "tablet" else 1.0
         ctr *= 1.5 if segment == "vip" else 0.8 if segment == "new_user" else 1.0
         ctr *= 1.2 if 18 <= hour <= 21 else 0.7 if 0 <= hour <= 6 else 1.0
-        clicks = sum([1 if random.random() < ctr else 0 for _ in range(impressions)])
-        base_cpc = 0.25 if clicks else 0.05
+        click = 1 if random.random() < ctr else 0
+        base_cpc = 0.25 if click else 0.05
         cost = round(base_cpc * (1.2 if device == "mobile" else 0.9 if device == "tablet" else 1.0) *
                      (1.5 if segment == "vip" else 0.8 if segment == "new_user" else 1.0) *
                      (1.3 if location == "US" else 1.1 if location == "CA" else 0.7 if location == "BR" else 1.0), 4)
 
-        batch.append({
+        events.append({
             "experiment_name": experiment_name,
             "variant_name": variant,
-            "impressions": impressions,
-            "clicks": clicks,
+            "impressions": 1,
+            "clicks": click,
             "event_date": str(date_selected),
             "cost": cost,
             "context": {"device": device, "location": location, "user_segment": segment, "hour": hour},
         })
 
-    if batch:
+        # Send in batches of batch_size
+        if len(events) >= batch_size:
+            try:
+                resp = requests.post(f"{API_URL}/ingest", json=events, headers=headers, timeout=10)
+                if resp.status_code != 200:
+                    success = False
+                events = []
+            except Exception as e:
+                st.error(f"Error sending batch: {e}")
+                success = False
+                events = []
+
+    # Send any remaining events
+    if events:
         try:
-            headers = {"Authorization": f"Bearer {st.session_state['jwt_token']}"}  
-            resp = requests.post(f"{API_URL}/ingest", json=batch, headers=headers, timeout=10)
-            return resp.status_code == 200
+            resp = requests.post(f"{API_URL}/ingest", json=events, headers=headers, timeout=10)
+            if resp.status_code != 200:
+                success = False
         except Exception as e:
-            st.error(f"Error sending events: {e}")
-    return False
+            st.error(f"Error sending batch: {e}")
+            success = False
+    return success
 
 # ---------------------------
 # LIVE SIMULATION CONTROL
