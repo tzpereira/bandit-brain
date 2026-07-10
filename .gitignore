@@ -1,6 +1,9 @@
 .env
 __pycache__/
 experimentation/
-scripts/.venv/
-backend/.venv/
-dashboard/.venv/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+*.egg-info/
