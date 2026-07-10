@@ -1,24 +1,26 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       API_URL: ${API_URL}
       HASH_SECRET_KEY: ${HASH_SECRET_KEY}
       HASH_ALGORITHM: ${HASH_ALGORITHM}
       HASH_TOKEN_EXPIRE_MINUTES: ${HASH_TOKEN_EXPIRE_MINUTES}
       DATABASE_URL: ${DATABASE_URL}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
     networks:
       - bandit-net
 
   dashboard:
-    build: ./dashboard
+    build:
+      context: .
+      dockerfile: docker/dashboard.Dockerfile
     ports:
       - "8501:8501"
     depends_on:
@@ -39,7 +41,11 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
-      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
     networks:
       - bandit-net
 
