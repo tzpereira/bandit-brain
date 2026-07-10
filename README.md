@@ -30,7 +30,7 @@ Bandit Brain is a robust experimentation and recommendation platform based on Mu
 	- [List Allocations](#list-allocations)
 	- [Delete Allocations](#delete-allocations)
 	- [Delete Experiments](#delete-experiments)
-	
+
 - [Example Usage](#example-usage)
 - [License](#license)
 - [Disclaimer](#disclaimer)
@@ -120,21 +120,17 @@ This platform supports several Multi-Armed Bandit (MAB) algorithms for experimen
 ## Project Structure
 
 ```
-backend/
-  app/
-    repositories/
-    routes/
-    services/
-    validators/
-  Dockerfile
-  requirements.txt
-dashboard/
-  Dockerfile
-  requirements.txt
-db/
+src/banditbrain/
+  core/          # Pure bandit engine: policies, domain models (no API/DB dependencies)
+  api/           # FastAPI layer: routes, repositories, auth, validation
+  simulation/    # Simulation & backtesting framework (in progress)
+dashboard/       # Streamlit dashboard
+migrations/      # Alembic database migrations
+docker/          # Dockerfiles and entrypoints
+scripts/         # Seed script, data stream generator
+tests/           # Test suite (pytest)
+public/          # Assets and example data
 routes-collection/
-scripts/
-public/
 ```
 
 ---
@@ -147,12 +143,32 @@ public/
 	 ```bash
 	 git clone https://github.com/tzpereira/bandit-brain.git
 	 cd bandit-brain
+	 cp .env.example .env
 	 ```
 
-2. Quick start:
+2. Quick start (full stack):
 	```bash
-	docker-compose up --build
+	docker compose up --build
 	```
+
+3. Seed demo data (optional, with the stack running):
+	```bash
+	make seed
+	```
+
+### Development
+
+Dependencies are managed with [uv](https://docs.astral.sh/uv/):
+
+```bash
+make install     # uv sync --all-extras
+make test        # pytest
+make lint        # ruff check + format check
+make typecheck   # mypy on the core package
+make check       # all of the above
+```
+
+Database migrations use Alembic and run automatically when the API container starts. To run them manually: `make migrate` (requires `DATABASE_URL`).
 
 ---
 
