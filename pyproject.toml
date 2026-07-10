@@ -1,0 +1,78 @@
+[project]
+name = "banditbrain"
+version = "0.1.0"
+description = "Experimentation and budget-allocation platform based on Multi-Armed Bandit algorithms"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.111",
+    "uvicorn>=0.30",
+    "psycopg2-binary>=2.9",
+    "PyJWT>=2.8",
+    "bcrypt>=4.1",
+    "email-validator>=2.1",
+    "python-dotenv>=1.0",
+    "alembic>=1.13",
+]
+dashboard = [
+    "streamlit>=1.36",
+    "plotly>=5.22",
+    "polars>=1.0",
+    "requests>=2.32",
+    "python-dotenv>=1.0",
+    "streamlit-tags>=1.2",
+    "streamlit-autorefresh>=1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "httpx>=0.27",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/banditbrain"]
+
+[tool.ruff]
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = [
+    "B008", # function call in argument defaults — FastAPI Depends()/Body() idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Long embedded SQL / Streamlit markup lines
+"src/banditbrain/api/repositories/experiments.py" = ["E501"]
+"dashboard/app.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+check_untyped_defs = true
+warn_unused_ignores = true
+files = ["src/banditbrain/core"]
+
+[[tool.mypy.overrides]]
+module = "numpy.*"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

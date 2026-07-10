@@ -1,7 +1,0 @@
-plotly
-polars
-dotenv
-requests
-streamlit
-streamlit-tags
-streamlit-autorefresh
