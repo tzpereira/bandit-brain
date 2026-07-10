@@ -1,15 +1,16 @@
-import os
-from dotenv import load_dotenv
 import base64
+import os
 import random
-import requests
-import polars as pl
-import streamlit as st
 from datetime import date, datetime, timedelta
-from components.login_form import login_form
+
 import plotly.express as px
-from streamlit_tags import st_tags
+import polars as pl
+import requests
+import streamlit as st
+from components.login_form import login_form
+from dotenv import load_dotenv
 from streamlit_autorefresh import st_autorefresh
+from streamlit_tags import st_tags
 
 load_dotenv()
 
@@ -19,8 +20,9 @@ if "jwt_token" not in st.session_state:
     login_form(API_URL)
     st.stop()
 
+
 def fetch_allocations(exp_name, exp_date, method, epsilon=None, c=None, tau=None):
-    if not isinstance(exp_date, (date, datetime)):
+    if not isinstance(exp_date, date | datetime):
         exp_date_obj = date.fromisoformat(str(exp_date))
     else:
         exp_date_obj = exp_date.date() if isinstance(exp_date, datetime) else exp_date
@@ -41,6 +43,7 @@ def fetch_allocations(exp_name, exp_date, method, epsilon=None, c=None, tau=None
         st.error(f"Error fetching allocations: {e}")
     return pl.DataFrame()
 
+
 def fetch_metrics(exp_name, exp_date, group_by_context=False):
     params = {"experiment_name": exp_name, "date": str(exp_date), "group_by_context": str(group_by_context).lower()}
     headers = {"Authorization": f"Bearer {st.session_state['jwt_token']}"}
@@ -51,6 +54,7 @@ def fetch_metrics(exp_name, exp_date, group_by_context=False):
     except Exception as e:
         st.error(f"Error fetching metrics: {e}")
     return pl.DataFrame()
+
 
 def fetch_experiments(exp_name, exp_date=None, limit=None):
     params = {"experiment_name": exp_name, "limit": limit}
@@ -65,6 +69,7 @@ def fetch_experiments(exp_name, exp_date=None, limit=None):
         st.error(f"Error fetching experiments: {e}")
     return []
 
+
 def load_data(exp_name, exp_date, method, epsilon=None, c=None, tau=None):
     allocations = fetch_allocations(exp_name, exp_date, method, epsilon, c, tau)
     metrics = fetch_metrics(exp_name, exp_date)
@@ -72,6 +77,7 @@ def load_data(exp_name, exp_date, method, epsilon=None, c=None, tau=None):
     logs = fetch_experiments(exp_name, exp_date)
     decision_log_df = pl.DataFrame(logs) if logs else pl.DataFrame()
     return allocations, metrics, metrics_by_context, decision_log_df
+
 
 def clear_data():
     """Remove all experiment and allocation data from backend."""
@@ -88,9 +94,14 @@ def clear_data():
 
     # Clear local session data (always exclude)
     keys_to_reset = [
-        "allocations_df", "metrics_df", "metrics_by_context_df",
-        "decision_log_df", "is_watching", "remaining_events",
-        "last_batch_sent", "refresh_key"
+        "allocations_df",
+        "metrics_df",
+        "metrics_by_context_df",
+        "decision_log_df",
+        "is_watching",
+        "remaining_events",
+        "last_batch_sent",
+        "refresh_key",
     ]
     for key in keys_to_reset:
         if key in st.session_state:
@@ -100,6 +111,7 @@ def clear_data():
                 st.session_state[key] = False
             else:
                 st.session_state[key] = 0
+
 
 st.set_page_config(page_title="Bandit Brain", layout="wide")
 
@@ -115,30 +127,42 @@ with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_op
     col1, col2 = st.columns(2, vertical_alignment="top")
 
     with col1:
-        upload_mode = st.radio("Data Input Mode", ["Upload historical data (CSV)", "Simulate live data"], key="data_mode")
-        
+        upload_mode = st.radio(
+            "Data Input Mode", ["Upload historical data (CSV)", "Simulate live data"], key="data_mode"
+        )
+
         # Orientation message for each mode
         if upload_mode == "Upload historical data (CSV)":
-            st.markdown("<span style='color:gray;'>Upload a CSV file with historical experiment data. Only aggregate visualizations will be shown.</span>", unsafe_allow_html=True)
+            st.markdown(
+                "<span style='color:gray;'>Upload a CSV file with historical experiment data. Only aggregate visualizations will be shown.</span>",
+                unsafe_allow_html=True,
+            )
         else:
-            st.markdown("<span style='color:gray;'>Simulate live data for step-by-step bandit learning and visualizations.</span>", unsafe_allow_html=True)
-        
-        
+            st.markdown(
+                "<span style='color:gray;'>Simulate live data for step-by-step bandit learning and visualizations.</span>",
+                unsafe_allow_html=True,
+            )
+
         experiment_name = st.text_input(
-            "Experiment Name", "homepage_test",
-            disabled=(upload_mode == "Upload historical data (CSV)")
+            "Experiment Name", "homepage_test", disabled=(upload_mode == "Upload historical data (CSV)")
         )
-        
-        date_selected = st.date_input(
-            "Date", date.today()
-        )
-        
+
+        date_selected = st.date_input("Date", date.today())
+
         algorithm = st.selectbox("Algorithm", ["eg", "ucb", "ts", "softmax"])
-        
+
         # Variants selection
-        if "allocations_df" in st.session_state and isinstance(st.session_state.allocations_df, pl.DataFrame) and st.session_state.allocations_df.height > 0:
+        if (
+            "allocations_df" in st.session_state
+            and isinstance(st.session_state.allocations_df, pl.DataFrame)
+            and st.session_state.allocations_df.height > 0
+        ):
             unique_variants = st.session_state.allocations_df["variant_name"].unique().to_list()
-        elif "metrics_df" in st.session_state and isinstance(st.session_state.metrics_df, pl.DataFrame) and st.session_state.metrics_df.height > 0:
+        elif (
+            "metrics_df" in st.session_state
+            and isinstance(st.session_state.metrics_df, pl.DataFrame)
+            and st.session_state.metrics_df.height > 0
+        ):
             unique_variants = st.session_state.metrics_df["variant_name"].unique().to_list()
         else:
             unique_variants = ["A", "B"]
@@ -155,47 +179,57 @@ with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_op
                 value=st.session_state.get("variants", unique_variants),
                 suggestions=unique_variants,
                 maxtags=10,
-                key="variants"
+                key="variants",
             )
 
     with col2:
         colA, colB = st.columns([2.5, 1], vertical_alignment="center")
         with colA:
-            uploaded_file = st.file_uploader("Upload CSV file", type=["csv"], key="csv_uploader", disabled=(upload_mode == "Simulate data"))
+            uploaded_file = st.file_uploader(
+                "Upload CSV file", type=["csv"], key="csv_uploader", disabled=(upload_mode == "Simulate data")
+            )
             if uploaded_file is not None:
                 try:
                     df_csv = pl.read_csv(uploaded_file)
                 except Exception as e:
                     st.error(f"Failed to read CSV: {e}")
         with colB:
-            template_df = pl.DataFrame({
-                "variant_name": [],
-                "impressions": [],
-                "clicks": [],
-                "cost": [],
-                "device": [],
-                "location": [],
-                "user_segment": [],
-                "hour": []
-            })
-            
+            template_df = pl.DataFrame(
+                {
+                    "variant_name": [],
+                    "impressions": [],
+                    "clicks": [],
+                    "cost": [],
+                    "device": [],
+                    "location": [],
+                    "user_segment": [],
+                    "hour": [],
+                }
+            )
+
             csv_bytes = template_df.write_csv()
             b64 = base64.b64encode(csv_bytes.encode()).decode()
 
-            href = f'''
+            href = f"""
                 <a href="data:file/csv;base64,{b64}" download="csv_template.csv" style="font-size:1.1em;">Download CSV template ⬇️</a>
-            '''
+            """
             st.markdown(href, unsafe_allow_html=True)
-                  
+
         batch_size = st.number_input(
-            "Batch Size", min_value=10, max_value=10000, value=100,
-            disabled=(upload_mode == "Upload historical data (CSV)")
+            "Batch Size",
+            min_value=10,
+            max_value=10000,
+            value=100,
+            disabled=(upload_mode == "Upload historical data (CSV)"),
         )
         total_events = st.number_input(
-            "Total Events to Simulate", min_value=100, max_value=100000, value=1000,
-            disabled=(upload_mode == "Upload historical data (CSV)")
+            "Total Events to Simulate",
+            min_value=100,
+            max_value=100000,
+            value=1000,
+            disabled=(upload_mode == "Upload historical data (CSV)"),
         )
-        
+
         epsilon = st.slider("Epsilon (EG)", 0.0, 1.0, 0.1) if algorithm == "eg" else None
         c_param = st.slider("C (UCB)", 0.0, 5.0, 2.0) if algorithm == "ucb" else None
         tau = st.slider("Tau (Softmax)", 0.01, 2.0, 0.1) if algorithm == "softmax" else None
@@ -229,10 +263,7 @@ with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_op
 
     with col1:
         clear_clicked = st.button(
-            "🗑️ Clear Data",
-            key="clear_data_btn",
-            help="Delete all experiment and allocation data.",
-            width="stretch"
+            "🗑️ Clear Data", key="clear_data_btn", help="Delete all experiment and allocation data.", width="stretch"
         )
         if clear_clicked:
             clear_data()
@@ -243,7 +274,7 @@ with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_op
             disabled=not run_enabled,
             key="run_btn",
             help="Start simulation or experiment.",
-            width="stretch"
+            width="stretch",
         )
 
         if run_clicked:
@@ -254,28 +285,30 @@ with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_op
             if upload_mode == "Upload historical data (CSV)":
                 if df_csv is not None:
                     batch = []
-                    
+
                     for row in df_csv.iter_rows(named=True):
                         context = {}
                         for ctx_field in ["device", "location", "user_segment", "hour"]:
                             if ctx_field in row:
                                 context[ctx_field] = row[ctx_field]
-                        batch.append({
-                            "experiment_name": st.session_state.get("experiment_name", "homepage_test"),
-                            "variant_name": row.get("variant_name", "A"),
-                            "impressions": int(row.get("impressions", 1)),
-                            "clicks": int(row.get("clicks", 0)),
-                            "event_date": str(date_selected),
-                            "cost": float(row.get("cost", 0.0)),
-                            "context": context,
-                        })
-                        
+                        batch.append(
+                            {
+                                "experiment_name": st.session_state.get("experiment_name", "homepage_test"),
+                                "variant_name": row.get("variant_name", "A"),
+                                "impressions": int(row.get("impressions", 1)),
+                                "clicks": int(row.get("clicks", 0)),
+                                "event_date": str(date_selected),
+                                "cost": float(row.get("cost", 0.0)),
+                                "context": context,
+                            }
+                        )
+
                     n_rows = len(batch)
                     batch_size = max(1, n_rows // 10)
                     success = True
-                    
+
                     for i in range(0, n_rows, batch_size):
-                        batch_slice = batch[i:i+batch_size]
+                        batch_slice = batch[i : i + batch_size]
                         try:
                             headers = {"Authorization": f"Bearer {st.session_state['jwt_token']}"}
                             resp = requests.post(f"{API_URL}/ingest", json=batch_slice, headers=headers, timeout=10)
@@ -287,13 +320,19 @@ with st.expander("Bandit Brain Settings", expanded=st.session_state["expander_op
                         except Exception as e:
                             st.error(f"Error sending CSV: {e}")
                             success = False
-                            
+
                     if success:
-                        a, m, mbc, decision_log_df = load_data(experiment_name, date_selected, algorithm, epsilon, c_param, tau)
+                        a, m, mbc, decision_log_df = load_data(
+                            experiment_name, date_selected, algorithm, epsilon, c_param, tau
+                        )
                         st.session_state["allocations_df"] = a if isinstance(a, pl.DataFrame) else pl.DataFrame()
                         st.session_state["metrics_df"] = m if isinstance(m, pl.DataFrame) else pl.DataFrame()
-                        st.session_state["metrics_by_context_df"] = mbc if isinstance(mbc, pl.DataFrame) else pl.DataFrame()
-                        st.session_state["decision_log_df"] = decision_log_df if isinstance(decision_log_df, pl.DataFrame) else pl.DataFrame()
+                        st.session_state["metrics_by_context_df"] = (
+                            mbc if isinstance(mbc, pl.DataFrame) else pl.DataFrame()
+                        )
+                        st.session_state["decision_log_df"] = (
+                            decision_log_df if isinstance(decision_log_df, pl.DataFrame) else pl.DataFrame()
+                        )
                         st.session_state.is_watching = False
                         st.session_state.remaining_events = 0
                         st.session_state.last_batch_sent = n_rows
@@ -352,9 +391,14 @@ if isinstance(allocations_df, pl.DataFrame):
 # SIMULATION FUNCTION
 # ---------------------------
 
+
 def simulate_events(n_events=1000):
     # Use local variables (already aligned with session_state)
-    variant_list = [row["variant_name"] for row in allocations_df.iter_rows(named=True)] if isinstance(allocations_df, pl.DataFrame) and allocations_df.height > 0 else variants
+    variant_list = (
+        [row["variant_name"] for row in allocations_df.iter_rows(named=True)]
+        if isinstance(allocations_df, pl.DataFrame) and allocations_df.height > 0
+        else variants
+    )
     if not variant_list:
         return False
 
@@ -378,19 +422,25 @@ def simulate_events(n_events=1000):
         ctr *= 1.2 if 18 <= hour <= 21 else 0.7 if 0 <= hour <= 6 else 1.0
         click = 1 if random.random() < ctr else 0
         base_cpc = 0.25 if click else 0.05
-        cost = round(base_cpc * (1.2 if device == "mobile" else 0.9 if device == "tablet" else 1.0) *
-                     (1.5 if segment == "vip" else 0.8 if segment == "new_user" else 1.0) *
-                     (1.3 if location == "US" else 1.1 if location == "CA" else 0.7 if location == "BR" else 1.0), 4)
+        cost = round(
+            base_cpc
+            * (1.2 if device == "mobile" else 0.9 if device == "tablet" else 1.0)
+            * (1.5 if segment == "vip" else 0.8 if segment == "new_user" else 1.0)
+            * (1.3 if location == "US" else 1.1 if location == "CA" else 0.7 if location == "BR" else 1.0),
+            4,
+        )
 
-        events.append({
-            "experiment_name": experiment_name,
-            "variant_name": variant,
-            "impressions": 1,
-            "clicks": click,
-            "event_date": str(date_selected),
-            "cost": cost,
-            "context": {"device": device, "location": location, "user_segment": segment, "hour": hour},
-        })
+        events.append(
+            {
+                "experiment_name": experiment_name,
+                "variant_name": variant,
+                "impressions": 1,
+                "clicks": click,
+                "event_date": str(date_selected),
+                "cost": cost,
+                "context": {"device": device, "location": location, "user_segment": segment, "hour": hour},
+            }
+        )
 
         # Send in batches of batch_size
         if len(events) >= batch_size:
@@ -414,6 +464,7 @@ def simulate_events(n_events=1000):
             st.error(f"Error sending batch: {e}")
             success = False
     return success
+
 
 # ---------------------------
 # LIVE SIMULATION CONTROL
@@ -439,7 +490,9 @@ if st.session_state.is_watching:
             st.session_state["allocations_df"] = a if isinstance(a, pl.DataFrame) else pl.DataFrame()
             st.session_state["metrics_df"] = m if isinstance(m, pl.DataFrame) else pl.DataFrame()
             st.session_state["metrics_by_context_df"] = mbc if isinstance(mbc, pl.DataFrame) else pl.DataFrame()
-            st.session_state["decision_log_df"] = decision_log_df if isinstance(decision_log_df, pl.DataFrame) else pl.DataFrame()
+            st.session_state["decision_log_df"] = (
+                decision_log_df if isinstance(decision_log_df, pl.DataFrame) else pl.DataFrame()
+            )
             # Update local variables
             allocations_df = st.session_state.get("allocations_df", pl.DataFrame())
             metrics_df = st.session_state.get("metrics_df", pl.DataFrame())
@@ -470,7 +523,7 @@ if isinstance(metrics_df, pl.DataFrame) and metrics_df.height > 0:
     with kpi_cols[4]:
         st.markdown("**Cost**")
 
-    for i, row in kpi_df.iterrows():
+    for _, row in kpi_df.iterrows():
         kpi_cols = st.columns([2, 1, 1, 1, 1])
         with kpi_cols[0]:
             st.markdown(f"{row['variant_name']}")
@@ -479,7 +532,7 @@ if isinstance(metrics_df, pl.DataFrame) and metrics_df.height > 0:
         with kpi_cols[2]:
             st.markdown(f"{row['clicks']}")
         with kpi_cols[3]:
-            st.markdown(f"{row['ctr']*100:.2f}%")
+            st.markdown(f"{row['ctr'] * 100:.2f}%")
         total_cost = row.get("total_cost", row.get("cost", 0.0))
         with kpi_cols[4]:
             st.markdown(f"${float(total_cost):.2f}")
@@ -494,11 +547,7 @@ if isinstance(decision_log_df, pl.DataFrame) and decision_log_df.height > 0:
         df_log["time_step"] = range(1, len(df_log) + 1)
     df_log["time_bin"] = (df_log["time_step"] // bin_size) * bin_size
 
-    df_alloc_evol = (
-        df_log.groupby(["time_bin", "variant_name"])
-        .size()
-        .reset_index(name="allocations")
-    )
+    df_alloc_evol = df_log.groupby(["time_bin", "variant_name"]).size().reset_index(name="allocations")
 
     # Normalize within each bin so it shows proportions
     df_alloc_evol["total"] = df_alloc_evol.groupby("time_bin")["allocations"].transform("sum")
@@ -512,10 +561,10 @@ if isinstance(decision_log_df, pl.DataFrame) and decision_log_df.height > 0:
         x="time_bin",
         y="share",
         color="variant_name",
-        groupnorm=None  # already normalized manually
+        groupnorm=None,  # already normalized manually
     )
     st.plotly_chart(fig_alloc, use_container_width=True)
-    
+
 # 3. Decision Log / Cumulative Reward
 if isinstance(decision_log_df, pl.DataFrame) and decision_log_df.height > 0:
     df_log = decision_log_df.to_pandas()
@@ -523,7 +572,9 @@ if isinstance(decision_log_df, pl.DataFrame) and decision_log_df.height > 0:
         df_log["reward"] = df_log["clicks"] / df_log["impressions"]
     if "time_step" not in df_log.columns:
         df_log["time_step"] = range(1, len(df_log) + 1)
-    df_log["cumulative_mean_reward"] = df_log.groupby("variant_name")["reward"].transform(lambda x: x.expanding().mean())
+    df_log["cumulative_mean_reward"] = df_log.groupby("variant_name")["reward"].transform(
+        lambda x: x.expanding().mean()
+    )
     st.subheader("Cumulative Reward by Variant")
     st.caption("Performance over time for each variant.")
     fig_reward = px.line(df_log, x="time_step", y="cumulative_mean_reward", color="variant_name")
@@ -545,9 +596,16 @@ if isinstance(allocations_df, pl.DataFrame) and allocations_df.height > 0:
 if isinstance(metrics_by_context_df, pl.DataFrame) and metrics_by_context_df.height > 0:
     df_ctx = metrics_by_context_df.to_pandas()
     st.subheader("Cost vs CTR by Variant, Segment, Device")
-    fig_ctx = px.scatter(df_ctx, x="total_cost", y="ctr", color="variant_name", symbol="device",
-                         size="impressions", hover_data=["clicks", "user_segment", "device"],
-                         facet_col="user_segment")
+    fig_ctx = px.scatter(
+        df_ctx,
+        x="total_cost",
+        y="ctr",
+        color="variant_name",
+        symbol="device",
+        size="impressions",
+        hover_data=["clicks", "user_segment", "device"],
+        facet_col="user_segment",
+    )
     st.plotly_chart(fig_ctx, use_container_width=True)
 
     st.subheader("Average CTR by Segment and Device")
@@ -560,10 +618,7 @@ if isinstance(metrics_by_context_df, pl.DataFrame) and metrics_by_context_df.hei
     st.subheader("Geographic Performance")
     st.caption("Performance metrics by geographic location.")
     # Agrupa por país e soma cliques/impressões
-    df_geo_grouped = df_geo.groupby("location").agg({
-        "impressions": "sum",
-        "clicks": "sum"
-    }).reset_index()
+    df_geo_grouped = df_geo.groupby("location").agg({"impressions": "sum", "clicks": "sum"}).reset_index()
     df_geo_grouped["ctr"] = df_geo_grouped["clicks"] / df_geo_grouped["impressions"]
     fig_geo = px.choropleth(
         df_geo_grouped,
@@ -572,17 +627,13 @@ if isinstance(metrics_by_context_df, pl.DataFrame) and metrics_by_context_df.hei
         hover_data=["impressions", "clicks"],
         color_continuous_scale=px.colors.sequential.Viridis,
         scope="world",
-        projection="natural earth"
+        projection="natural earth",
     )
     fig_geo.update_geos(
-        showcountries=True,
-        showcoastlines=True,
-        showland=True,
-        landcolor="#f7f7f7",
-        countrycolor="#333"
+        showcountries=True, showcoastlines=True, showland=True, landcolor="#f7f7f7", countrycolor="#333"
     )
     fig_geo.update_traces(marker_line_width=1, marker_line_color="#333")
-    fig_geo.update_layout(margin={"r":0,"t":40,"l":0,"b":0})
+    fig_geo.update_layout(margin={"r": 0, "t": 40, "l": 0, "b": 0})
     st.plotly_chart(fig_geo, use_container_width=True)
 
 # 8. CTR Heatmap: Device x Segment
@@ -595,7 +646,7 @@ if isinstance(metrics_by_context_df, pl.DataFrame) and metrics_by_context_df.hei
             text_auto=True,
             aspect="auto",
             color_continuous_scale="Viridis",
-            labels=dict(x="User Segment", y="Device", color="CTR")
+            labels=dict(x="User Segment", y="Device", color="CTR"),
         )
         st.subheader("CTR Heatmap: Device x Segment")
         st.plotly_chart(fig_heatmap, use_container_width=True)
@@ -606,17 +657,13 @@ if isinstance(decision_log_df, pl.DataFrame) and decision_log_df.height > 0:
     if "context" in df_log.columns and set(["impressions", "clicks"]).issubset(df_log.columns):
         df_log["hour"] = df_log["context"].apply(lambda x: x.get("hour") if isinstance(x, dict) else None)
         hourly = df_log.groupby("hour")[["impressions", "clicks"]].sum().reset_index()
-        fig_hour = px.bar(
-            hourly,
-            x="hour",
-            y=["impressions", "clicks"],
-            barmode="group"
-        )
+        fig_hour = px.bar(hourly, x="hour", y=["impressions", "clicks"], barmode="group")
         st.subheader("Impressions & Clicks by Hour of Day")
         st.plotly_chart(fig_hour, use_container_width=True)
-        
+
 # Footer
-st.markdown("""
+st.markdown(
+    """
     <style>
         .footer {
             text-align: center;
@@ -626,11 +673,15 @@ st.markdown("""
     <div class='footer'>
         <span>Made by <a href='https://github.com/tzpereira' target='_blank' style='color:#FF69B4; text-decoration:none;'><b>Mateus</b></a> &middot; Powered by Streamlit</span>
     </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
+
 
 def on_session_end():
     """Callback to clear all user data when session ends (tab closed or refreshed)."""
     clear_data()
+
 
 if hasattr(st, "on_session_end"):
     st.on_session_end(on_session_end)
