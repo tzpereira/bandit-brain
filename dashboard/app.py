@@ -568,16 +568,19 @@ if isinstance(decision_log_df, pl.DataFrame) and decision_log_df.height > 0:
 # 3. Decision Log / Cumulative Reward
 if isinstance(decision_log_df, pl.DataFrame) and decision_log_df.height > 0:
     df_log = decision_log_df.to_pandas()
-    if "reward" not in df_log.columns:
-        df_log["reward"] = df_log["clicks"] / df_log["impressions"]
     if "time_step" not in df_log.columns:
-        df_log["time_step"] = range(1, len(df_log) + 1)
-    df_log["cumulative_mean_reward"] = df_log.groupby("variant_name")["reward"].transform(
-        lambda x: x.expanding().mean()
-    )
-    st.subheader("Cumulative Reward by Variant")
-    st.caption("Performance over time for each variant.")
-    fig_reward = px.line(df_log, x="time_step", y="cumulative_mean_reward", color="variant_name")
+        df_log["time_step"] = df_log.groupby("variant_name").cumcount() + 1
+    # Cumulative CTR = total clicks so far / total impressions so far, per variant.
+    # This is impression-weighted (each impression counts once), unlike a plain
+    # mean of per-row CTRs, which would let a 5-impression row outweigh a 5000-one.
+    grp = df_log.groupby("variant_name")
+    df_log["cum_clicks"] = grp["clicks"].cumsum()
+    df_log["cum_impressions"] = grp["impressions"].cumsum()
+    df_log["cumulative_ctr"] = df_log["cum_clicks"] / df_log["cum_impressions"]
+    st.subheader("Cumulative CTR by Variant")
+    st.caption("Impression-weighted click-through rate over time for each variant.")
+    fig_reward = px.line(df_log, x="time_step", y="cumulative_ctr", color="variant_name")
+    fig_reward.update_yaxes(tickformat=".1%", title="Cumulative CTR")
     st.plotly_chart(fig_reward, use_container_width=True)
 
 # 4. Experiment Metrics
