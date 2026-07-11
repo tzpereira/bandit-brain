@@ -30,6 +30,8 @@ class IngestRequest(BaseModel):
         self.impressions = validate_non_negative_int(self.impressions, "impressions")
         self.clicks = validate_non_negative_int(self.clicks, "clicks")
         self.cost = validate_non_negative_float(self.cost, "cost")
+        if self.clicks > self.impressions:
+            raise ValueError("clicks must not exceed impressions (CTR cannot be greater than 100%).")
         self.event_date = validate_date_string(self.event_date, "event_date")
         self.context = validate_context_dict(self.context)
         return self
@@ -73,5 +75,7 @@ def ingest_experiment(request: IngestBatch, user_id: int = Depends(verify_token)
         insert_experiments_batch(user_id=int(user_id), experiments=experiments)
 
         return {"status": "success"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
