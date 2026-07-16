@@ -1,558 +1,279 @@
 <p align="center">
-  <img src="public/logo.png" alt="Logo" width="200" background="transparent"/>
+  <img src="public/logo.png" alt="Bandit Brain logo" width="180"/>
 </p>
 
 # Bandit Brain
 
-Bandit Brain is a robust experimentation and recommendation platform based on Multi-Armed Bandit (MAB) algorithms. It provides a backend REST API, dashboard for visualization, simulation scripts, and database integration for managing and analyzing experiments in real time.
+Decide how to split traffic across the variants of an online experiment using multi-armed bandit algorithms instead of a fixed A/B split. Bandit Brain is a pure Python bandit engine (`core`) with an optional FastAPI service and a Streamlit dashboard on top.
 
----
-
-## Demo
+[![CI](https://github.com/tzpereira/bandit-brain/actions/workflows/ci.yml/badge.svg)](https://github.com/tzpereira/bandit-brain/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Version](https://img.shields.io/badge/version-0.1.0-lightgrey)
 
 ![Demo](public/demo.gif)
 
 ---
 
-## Table of Contents
+## Why / when to use it
 
-- [Features](#features)
-- [Project Structure](#project-structure)
-- [Models](#models)
-- [Getting Started](#getting-started)
-- [API Documentation](#api-documentation)
-	- [Sign up](#signup)
-	- [Login](#login)
-	- [Ingest Experiments](#ingest-experiments)
-	- [Recommend Allocations](#recommend-allocations)
-	- [List Experiments](#list-experiments)
-	- [List Metrics](#list-metrics)
-	- [List Allocations](#list-allocations)
-	- [Delete Allocations](#delete-allocations)
-	- [Delete Experiments](#delete-experiments)
-
-- [Example Usage](#example-usage)
-- [License](#license)
-- [Disclaimer](#disclaimer)
-- [Contributing](#contributing)
+- **You run ads or landing-page variants and want to shift budget toward winners automatically.** Feed daily impressions/clicks per variant and get a recommended allocation for the next day.
+- **You want to compare bandit strategies on your own data.** Four policies (epsilon-greedy, UCB, Thompson sampling, softmax) share one interface, so you can swap them on the same metrics and see how allocation changes.
+- **You need the algorithms without the stack.** The `banditbrain.core` package depends only on `numpy` and `pydantic` — import it into your own service, no database or web server required.
 
 ---
 
-## Features
+## Installation
 
-- REST API for experiment ingestion, recommendation, allocation, and metrics
-- Dashboard for results visualization
-- Upload real experiment data via CSV directly in the dashboard
-- Support for multiple MAB algorithms: Epsilon-Greedy, UCB, Thompson Sampling, Softmax
-- Experiment simulation and management
-- Docker support for easy deployment
-- PostgreSQL integration
-- All dashboard visualizations use real, persisted backend data for consistency and auditability.
+Dependencies are managed with [uv](https://docs.astral.sh/uv/). The package is not published to PyPI — install from source.
 
----
+```bash
+git clone https://github.com/tzpereira/bandit-brain.git
+cd bandit-brain
 
-## Models
+# Core engine only (numpy + pydantic)
+uv sync
 
-This platform supports several Multi-Armed Bandit (MAB) algorithms for experiment allocation. Below are technical details for each model, including definition, formula, recommended use cases, and tradeoffs.
-
-### Epsilon-Greedy (EG)
-**Definition:** Selects the best-known variant with probability `1 - epsilon` and explores a random variant with probability `epsilon`.
-
-**Formula:**
-- With probability `epsilon`, select a random variant.
-- With probability `1 - epsilon`, select the variant with the highest observed mean reward (e.g., CTR).
-
-**When to use:**
-- When a simple balance between exploration and exploitation is needed, especially in stationary environments or when initial uncertainty is high.
-
-**Tradeoffs:**
-- Easy to implement and tune. May over-explore if `epsilon` is too high, or under-explore if too low. Does not adapt exploration rate over time.
-
----
-
-### Upper Confidence Bound (UCB)
-**Definition:** Selects variants based on an optimistic estimate of their performance, considering both observed mean and uncertainty.
-
-**Formula:**
-- For each variant:
-  `score = mean + c * sqrt(ln(total_impressions) / impressions_variant)`
-  where `c` controls exploration strength.
-
-**When to use:**
-- When it is important to prioritize less-tested variants and systematically reduce uncertainty, especially with many options.
-
-**Tradeoffs:**
-- Automatically balances exploration and exploitation. Sensitive to the choice of `c`. May over-explore rarely chosen variants.
-
----
-
-### Thompson Sampling (TS)
-**Definition:** Uses Bayesian inference to sample possible reward rates for each variant, balancing exploration and exploitation probabilistically.
-
-**Formula:**
-- For each variant, sample a reward rate from the Beta distribution parameterized by observed successes and failures.
-- Select the variant with the highest sampled value.
-
-**When to use:**
-- Recommended for adaptive, data-scarce environments. Handles uncertainty and non-stationarity well.
-
-**Tradeoffs:**
-- Typically achieves strong empirical performance. More complex to implement and interpret. Requires probabilistic reasoning.
-
----
-
-### Softmax
-**Definition:** Allocates selection probabilities to each variant proportional to their observed performance, smoothed by a temperature parameter `tau`.
-
-**Formula:**
-- For each variant:
-  `p_i = exp(mean_i / tau) / sum_j exp(mean_j / tau)`
-  where `tau` controls the degree of exploration.
-
-**When to use:**
-- Useful when all variants should have a nonzero chance of selection, even if their performance is low. Good for continuous exploration.
-
-**Tradeoffs:**
-- Sensitive to `tau`: low values favor exploitation, high values favor exploration. May require careful tuning for optimal results.
-
----
-
-## Project Structure
-
-```
-src/banditbrain/
-  core/          # Pure bandit engine: policies, domain models (no API/DB dependencies)
-  api/           # FastAPI layer: routes, repositories, auth, validation
-  simulation/    # Simulation & backtesting framework (in progress)
-dashboard/       # Streamlit dashboard
-migrations/      # Alembic database migrations
-docker/          # Dockerfiles and entrypoints
-scripts/         # Seed script, data stream generator
-tests/           # Test suite (pytest)
-public/          # Assets and example data
-routes-collection/
+# Everything (API + dashboard + dev tools)
+uv sync --all-extras        # or: make install
 ```
 
+Optional dependency groups defined in `pyproject.toml`: `api` (FastAPI, uvicorn, psycopg2, PyJWT, bcrypt, Alembic) and `dashboard` (Streamlit, Plotly, Polars).
+
 ---
 
-## Getting Started
+## Quickstart
 
-### Local Setup
+Use the core engine directly — no server, no database. This runs as-is:
 
-1. Clone the repository:
-	 ```bash
-	 git clone https://github.com/tzpereira/bandit-brain.git
-	 cd bandit-brain
-	 cp .env.example .env
-	 ```
+```python
+from banditbrain.core.models import Metric
+from banditbrain.core.policies import ThompsonSamplingBandit
 
-2. Quick start (full stack):
-	```bash
-	docker compose up --build
-	```
+# One Metric per variant. ctr = clicks / impressions.
+metrics = [
+    Metric(variant_name="A", impressions=1000, clicks=120, total_cost=1.0,
+           device="mobile", location="BRA", user_segment="new_user",
+           ctr=0.120, ctr_se=0.010, ctr_ci_lower=0.100, ctr_ci_upper=0.140),
+    Metric(variant_name="B", impressions=950, clicks=80, total_cost=0.9,
+           device="desktop", location="USA", user_segment="returning_user",
+           ctr=0.084, ctr_se=0.009, ctr_ci_lower=0.066, ctr_ci_upper=0.102),
+]
 
-3. Seed demo data (optional, with the stack running):
-	```bash
-	make seed
-	```
+bandit = ThompsonSamplingBandit(metrics, experiment_name="homepage_test", date="2026-01-01")
+for allocation in bandit.get_allocation():
+    print(allocation.variant_name, allocation.allocated_pct, allocation.date)
+# A 1.0 2026-01-02
+# B 0.0 2026-01-02
+```
 
-### Development
+Every policy exposes the same `get_allocation()` method returning a list of `Allocation` objects whose `allocated_pct` values sum to `1.0`. The allocation `date` is always the day **after** the input `date` (next-day forecast).
 
-Dependencies are managed with [uv](https://docs.astral.sh/uv/):
+To run the full stack instead (API + dashboard + PostgreSQL):
+
+```bash
+cp .env.example .env
+docker compose up --build      # or: make up
+make seed                      # optional: load demo data
+```
+
+- API: <http://localhost:8000> (OpenAPI docs at `/docs`)
+- Dashboard: <http://localhost:8501>
+
+---
+
+## Core concepts: the four policies
+
+All four take a `list[Metric]` and produce a `list[Allocation]`. They differ in how they turn observed click-through rates (CTR) into an allocation.
+
+| Strategy | Class | Tuning param | Allocation shape | Choose it when |
+|---|---|---|---|---|
+| Epsilon-greedy | `EpsilonGreedyBandit` | `epsilon` (0–1, default 0.1) | 100% to one variant | You want the simplest exploration/exploitation knob. |
+| UCB | `UCBBandit` | `c` (>0, default 2.0) | 100% to one variant | You want exploration driven by uncertainty, not a fixed rate. |
+| Thompson sampling | `ThompsonSamplingBandit` | — | 100% to one variant | Data is sparse/uncertain and you want a Bayesian approach. |
+| Softmax | `SoftmaxBandit` | `tau` (>0, default 0.1) | Proportional across all variants | You want every variant to keep a share of traffic. |
+
+**Epsilon-greedy.** With probability `epsilon` it picks a variant uniformly at random (explore); otherwise it picks the one with the highest observed CTR (exploit). Simple and fast, but exploration is a fixed rate that doesn't adapt — high `epsilon` wastes traffic, low `epsilon` can lock onto a false winner early.
+
+**UCB (Upper Confidence Bound).** Scores each variant as `ctr + c * sqrt(ln(total_impressions) / impressions)` and picks the highest. Under-sampled variants get an optimism bonus, so exploration is directed at what's least certain rather than random. Variants with zero impressions are treated as maximally promising (`score = 1.0`). `c` controls how aggressively it explores.
+
+**Thompson sampling.** For each variant it draws a sample from a `Beta(1 + clicks, 1 + impressions − clicks)` posterior and picks the variant with the highest draw. Naturally balances exploration and exploitation and handles small samples gracefully, with no rate to tune. Because it samples, the choice is stochastic across calls.
+
+**Softmax.** Converts CTRs into a probability distribution with a numerically stable softmax at temperature `tau` and allocates traffic proportionally: `p_i = exp(ctr_i / tau) / Σ_j exp(ctr_j / tau)`. Unlike the other three, it spreads budget across all variants. Low `tau` → close to greedy; high `tau` → close to uniform.
+
+> **Note on allocation shape:** epsilon-greedy, UCB, and Thompson sampling currently commit **100% of traffic to a single selected variant** (0% to the rest) per call. Only softmax returns a genuinely fractional split. Fractional allocation for all four is a planned change — see [ROADMAP.md](ROADMAP.md), Phase 1.
+
+---
+
+## API reference (`banditbrain.core`)
+
+### Policies
+
+Each constructor takes `metrics: list[Metric]`, plus `experiment_name: str = ""` and `date: str | None = None` (used to stamp the output; `None`/`""` means today). `get_allocation()` returns `list[Allocation]`.
+
+```python
+EpsilonGreedyBandit(metrics, epsilon=0.1, experiment_name="", date=None)
+UCBBandit(metrics, c=2.0, experiment_name="", date=None)
+ThompsonSamplingBandit(metrics, experiment_name="", date=None)
+SoftmaxBandit(metrics, tau=0.1, experiment_name="", date=None)
+```
+
+`EpsilonGreedyBandit`, `UCBBandit`, and `ThompsonSamplingBandit` also expose `select() -> str`, which returns the chosen variant name without building `Allocation` objects.
+
+```python
+from banditbrain.core.policies import UCBBandit
+
+bandit = UCBBandit(metrics, c=1.5, experiment_name="pricing")
+winner = bandit.select()                 # -> "A"
+allocation = bandit.get_allocation()     # -> [Allocation(...), ...]
+```
+
+### Models (`banditbrain.core.models`)
+
+Pydantic models used across the engine.
+
+- **`Metric`** — one variant's aggregated stats: `variant_name`, `clicks`, `impressions`, `total_cost`, `device`, `location`, `user_segment`, `ctr`, `ctr_se`, `ctr_ci_lower`, `ctr_ci_upper`, plus optional `cpc`/`cpv`. This is the input to every policy.
+- **`Allocation`** — one variant's recommended share: `experiment_name`, `variant_name`, `allocated_pct`, `algorithm` (`"eg"`, `"ucb"`, `"ts"`, `"softmax"`), `date`. The output of every policy.
+- **`Experiment`** — a raw ingested event: `experiment_name`, `variant_name`, `impressions`, `clicks`, `cost`, `event_date`, optional `context`.
+
+### Helper (`banditbrain.core.dates`)
+
+```python
+from banditbrain.core.dates import get_prediction_date
+
+get_prediction_date("2026-01-01")   # -> "2026-01-02"  (always +1 day)
+get_prediction_date(None)           # -> tomorrow's date, ISO format
+```
+
+---
+
+## HTTP API (`banditbrain.api`)
+
+The FastAPI service wraps the core engine, persists to PostgreSQL, and gates everything behind JWT auth. All routes except `/signup` and `/login` require an `Authorization: Bearer <token>` header.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/signup` | Create an account (`email`, `password`). |
+| POST | `/login` | Exchange credentials for a JWT access token. |
+| POST | `/ingest` | Ingest a JSON **array** of experiment events. |
+| POST | `/recommend` | Run a policy over stored metrics and persist + return allocations. |
+| GET | `/experiments` | List ingested events. Filters: `experiment_name`, `date`, `limit`. |
+| GET | `/metrics` | Aggregated per-variant metrics. Filters: `experiment_name`, `date`, `group_by_context`. |
+| GET | `/allocations` | List persisted allocations. Filters: `experiment_name`, `date`, `algorithm`, `limit`. |
+| DELETE | `/experiments` | Delete the caller's experiment records (204, no payload). |
+| DELETE | `/allocations` | Delete the caller's allocation records (204, no payload). |
+
+**`POST /recommend` body** — `method` selects the policy; only the matching param is used:
+
+```json
+{
+  "experiment_name": "homepage_test",
+  "method": "ts",
+  "epsilon": 0.1,
+  "c": 2.0,
+  "tau": 0.1,
+  "date": "2026-01-01"
+}
+```
+
+Validation: `method` ∈ `{eg, ucb, ts, softmax}`, `epsilon` ∈ `[0, 1]`, `c`/`tau` ≥ 0. The response is a list of `Allocation` objects dated the next day. Interactive docs are served at `/docs`.
+
+**`POST /ingest` body** — an array; `clicks` must not exceed `impressions`:
+
+```json
+[
+  {
+    "experiment_name": "homepage_test",
+    "variant_name": "A",
+    "impressions": 1000,
+    "clicks": 120,
+    "cost": 1.0,
+    "event_date": "2026-01-01",
+    "context": {"device": "mobile"}
+  }
+]
+```
+
+A ready-to-import request collection lives in [routes-collection/bandit-brain-routes.har](routes-collection/bandit-brain-routes.har).
+
+### Dashboard CSV format
+
+The Streamlit dashboard can upload real data instead of using the API. Expected columns (see [public/example_ads_data.csv](public/example_ads_data.csv)):
+
+`variant_name, impressions, clicks, cost, device, location, user_segment, hour`
+
+---
+
+## Configuration
+
+The API and dashboard read the following environment variables (see [.env.example](.env.example)):
+
+| Variable | Used by | Description |
+|---|---|---|
+| `DATABASE_URL` | API | PostgreSQL connection string. |
+| `HASH_SECRET_KEY` | API | Secret for signing JWTs. |
+| `HASH_ALGORITHM` | API | JWT algorithm (e.g. `HS256`). |
+| `HASH_TOKEN_EXPIRE_MINUTES` | API | Token lifetime in minutes. |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | db | PostgreSQL bootstrap credentials. |
+| `API_URL` | dashboard | Base URL the dashboard calls. |
+
+**Policy hyperparameters** are passed per request/call, not via env:
+
+| Param | Policy | Range | Default | Effect |
+|---|---|---|---|---|
+| `epsilon` | epsilon-greedy | `[0, 1]` | `0.1` | Higher → more random exploration. |
+| `c` | UCB | `> 0` | `2.0` | Higher → more weight on uncertainty (more exploration). |
+| `tau` | softmax | `> 0` | `0.1` | Higher → more uniform; lower → greedier. |
+
+Database schema changes are managed with Alembic ([migrations/](migrations/)) and applied automatically when the API container starts; run them manually with `make migrate` (needs `DATABASE_URL`).
+
+---
+
+## Development
 
 ```bash
 make install     # uv sync --all-extras
-make test        # pytest
-make lint        # ruff check + format check
-make typecheck   # mypy on the core package
-make check       # all of the above
+make test        # uv run pytest
+make lint        # ruff check + format --check
+make typecheck   # mypy on banditbrain.core
+make check       # lint + typecheck + test
+make seed        # load demo data into a running stack
 ```
 
-Database migrations use Alembic and run automatically when the API container starts. To run them manually: `make migrate` (requires `DATABASE_URL`).
+Tests live in [tests/](tests/): `test_core_policies.py` (allocation correctness), `test_ingest_validation.py` (ingest rules), `test_api_smoke.py` (routes registered + auth enforced). CI runs lint → typecheck → tests on every push and PR ([.github/workflows/ci.yml](.github/workflows/ci.yml)); `pre-commit` hooks mirror it.
 
----
+### Project layout
 
-## Using the Dashboard with CSV Uploads
-
-The dashboard allows you to either simulate experiment data or upload your own real data using a CSV file. This makes it easy to analyze and visualize results from actual experiments, not just synthetic ones.
-
-**How to use:**
-
-1. Open the dashboard in your browser.
-2. Select **Upload CSV** as the data input mode.
-3. Upload your CSV file containing experiment data.
-4. The dashboard will process your data and display all visualizations and metrics based on your uploaded file.
-
-**Expected CSV format:**
-
-| variant_name | impressions | clicks | cost | device | location | user_segment  | hour |
-|--------------|-------------|--------|------|--------|----------|---------------|------|
-| A            | 1000        | 120    | 1.0  | mobile | BRA      | new_user      | 14   |
-| B            | 950         | 110    | 0.9  | desktop| USA      | returning_user| 15   |
-
-You can download a CSV template directly from the dashboard interface.
-
-**Tip:** All columns are required for best results. The dashboard will use your data for all visualizations, metrics, and recommendations.
-
-### Docker
-
-1. Make sure Docker and Docker Compose are installed.
-2. Run:
-	 ```bash
-	 docker-compose up --build
-	 ```
-3. Backend and dashboard will be available at the configured ports (see `docker-compose.yaml`).
-
----
-
-## Authentication & JWT Usage
-
-All API usage requires user authentication. You must create an account and use a JWT token for all protected routes.
-
-**How to authenticate:**
-
-1. Create an account using `/signup`.
-2. Log in using `/login` to receive a JWT token.
-3. For all protected routes, include the JWT token in the `Authorization` header as:
-	 ```
-	 Authorization: Bearer <your-jwt-token>
-	 ```
-
-**Note:** If the JWT token is missing or invalid, requests to protected endpoints will be rejected.
-
----
-
-## API Documentation
-### Signup
-
-**POST /signup**
-
-Create a new user account.
-
-**Payload Example:**
-```json
-{
-	"email": "user@example.com",
-	"password": "yourpassword"
-}
+```
+src/banditbrain/
+  core/          # Pure bandit engine: policies + models (numpy + pydantic only)
+  api/           # FastAPI layer: routes, repositories, JWT auth, validators
+  simulation/    # Simulation/backtesting package (planned — currently empty)
+dashboard/       # Streamlit dashboard
+migrations/      # Alembic migrations
+docker/          # Dockerfiles + entrypoints
+scripts/         # Seed + example-data + stream generators
+tests/           # pytest suite
 ```
 
-**Response Example:**
-```json
-{
-	"user_id": 1,
-	"email": "user@example.com"
-}
-```
-
----
-
-### Login
-
-**POST /login**
-
-Authenticate an existing user and receive a JWT token.
-
-**Payload Example:**
-```json
-{
-	"email": "user@example.com",
-	"password": "yourpassword"
-}
-```
-
-**Response Example:**
-```json
-{
-	"access_token": "<jwt-token>",
-	"token_type": "bearer"
-}
-```
-
----
-
-> **All routes below require the JWT token in the Authorization header.**
-### Ingest Experiments
-
-**POST /ingest**
-
-Ingest one or more experiment events. Accepts a JSON array of experiment objects.
-
-**Payload Example:**
-```json
-[
-	{
-		"experiment_name": "homepage_test",
-		"variant_name": "A",
-		"impressions": 1000,
-		"clicks": 120,
-		"cost": 1.0,
-		"event_date": "2025-08-24",
-		"context": {"device": "mobile"}
-	}
-]
-```
-
-**Response:**
-```json
-{ "status": "success" }
-```
-
----
-
-### Recommend Allocations
-
-**POST /recommend**
-
-Get recommended allocation for experiment variants using a chosen algorithm.
-
-**Payload Example:**
-```json
-{
-	"experiment_name": "homepage_test",
-	"method": "eg",        // "eg", "ucb", "ts", "softmax"
-	"epsilon": 0.1,        // for "eg"
-	"c": 2.0,              // for "ucb"
-	"tau": 0.1,            // for "softmax"
-	"date": "2025-08-24"  // ISO format (YYYY-MM-DD)
-}
-```
-
-**Response Example:**
-```json
-[
-	{
-		"id": null,
-		"experiment_name": "homepage_test",
-		"variant_name": "A",
-		"allocated_pct": 1.0,
-		"algorithm": "eg",
-		"date": "2025-08-25", // always predicts for the next day (allocation date is always the day after the input date)
-		"created_at": null
-	},
-	{
-		"id": null,
-		"experiment_name": "homepage_test",
-		"variant_name": "B",
-		"allocated_pct": 0.0,
-		"algorithm": "eg",
-		"date": "2025-08-25", // always predicts for the next day
-		"created_at": null
-	}
-]
-```
-
-**Note:** The `date` field in the response always refers to the next day after the input date, representing a forecast for future allocation.
-
----
-
-### List Experiments
-
-**GET /experiments**
-
-Retrieve a list of experiments, optionally filtered by experiment name, date, or limited in number.
-
-**Query Parameters:**
-
-| Name             | Type   | Required | Description                                 |
-|------------------|--------|----------|---------------------------------------------|
-| experiment_name  | string | No       | Filter by experiment name                   |
-| date             | string | No       | Filter by event date (YYYY-MM-DD)           |
-| limit            | int    | No       | Limit the number of returned experiments    |
-
-**Example Request:**
-```
-GET /experiments?experiment_name=homepage_test&date=2025-08-24&limit=10
-```
-
-**Response:**
-Returns a JSON array of experiment objects.
-
-**Response Example:**
-```json
-[
-	{
-		"id": 1,
-		"experiment_name": "homepage_test",
-		"variant_name": "A",
-		"impressions": 1000,
-		"clicks": 120,
-		"cost": 1.0,
-		"event_date": "2025-08-24",
-		"context": {"device": "mobile"},
-		"created_at": "2025-08-24T12:00:00"
-	},
-	{
-		"id": 2,
-		"experiment_name": "homepage_test",
-		"variant_name": "B",
-		"impressions": 950,
-		"clicks": 110,
-		"cost": 0.9,
-		"event_date": "2025-08-24",
-		"context": {"device": "desktop"},
-		"created_at": "2025-08-24T12:00:00"
-	}
-]
-```
-
-**What it does:**
-Returns all experiments matching the filters, including all fields for each experiment.
-
----
-
-### List Metrics
-
-**GET /metrics**
-
-Retrieve aggregated metrics (impressions, clicks, CTR, etc.) for each variant, with optional filters and grouping.
-
-**Query Parameters:**
-
-| Name              | Type    | Required | Description                                 |
-|-------------------|---------|----------|---------------------------------------------|
-| experiment_name   | string  | No       | Filter by experiment name                   |
-| date              | string  | No       | Filter by event date (YYYY-MM-DD)           |
-| group_by_context  | boolean | No       | Group metrics by context fields             |
-
-**Example Request:**
-```
-GET /metrics?experiment_name=homepage_test&date=2025-08-24&group_by_context=true
-```
-
-**Response:**
-Returns a JSON array of metric objects.
-
-**Response Example:**
-```json
-[
-	{
-		"variant_name": "A",
-		"clicks": 120,
-		"total_cost": 1.0,
-		"impressions": 1000,
-		"device": "mobile",
-		"location": "BR",
-		"user_segment": "new",
-		"cpc": 0.0083,
-		"cpv": 0.008,
-		"ctr": 0.12,
-		"ctr_se": 0.01,
-		"ctr_ci_lower": 0.10,
-		"ctr_ci_upper": 0.14
-	},
-	{
-		"variant_name": "B",
-		"clicks": 110,
-		"total_cost": 0.9,
-		"impressions": 950,
-		"device": "desktop",
-		"location": "BR",
-		"user_segment": "returning",
-		"cpc": 0.0081,
-		"cpv": 0.0079,
-		"ctr": 0.115,
-		"ctr_se": 0.009,
-		"ctr_ci_lower": 0.097,
-		"ctr_ci_upper": 0.133
-	}
-]
-```
-
-**What it does:**
-Returns aggregated metrics for each variant, optionally grouped by context fields, useful for performance analysis and reporting.
-
-### List Allocations
-
-**GET /allocations**
-
-Retrieve persisted allocation results for experiment variants. This endpoint returns the allocation data generated and stored by the /recommend route.
-
-**Query Parameters:**
-
-| Name             | Type   | Required | Description                                 |
-|------------------|--------|----------|---------------------------------------------|
-| experiment_name  | string | No       | Filter by experiment name                   |
-| date             | string | No       | Filter by allocation date (YYYY-MM-DD, ISO format)      |
-| algorithm        | string | No       | Filter by algorithm used (eg, ucb, ts, softmax) |
-| limit            | int    | No       | Limit the number of returned allocations    |
-
-**Example Request:**
-```
-GET /allocations?experiment_name=homepage_test&date=2025-08-24&algorithm=eg&limit=10
-```
-
-**Response:**
-Returns a JSON array of allocation objects.
-
-**Response Example:**
-```json
-[
-	{
-		"id": 1,
-		"experiment_name": "homepage_test",
-		"variant_name": "A",
-		"allocated_pct": 1.0,
-		"algorithm": "eg",
-		"date": "2025-08-25", // always predicts for the next day
-		"created_at": "2025-08-24T12:00:00"
-	},
-	{
-		"id": 2,
-		"experiment_name": "homepage_test",
-		"variant_name": "B",
-		"allocated_pct": 0.0,
-		"algorithm": "eg",
-		"date": "2025-08-25", // always predicts for the next day
-		"created_at": "2025-08-24T12:00:00"
-	}
-]
-```
-
-**Note:** The `date` field in the response always refers to the next day after the input date, representing a forecast for future allocation. All date fields must use ISO format (`YYYY-MM-DD`).
-
----
-
-### Delete Allocations
-
-**DELETE /delete/allocations**
-
-Delete allocation records for a given experiment or variant.
-
-- No payload required.
-- No response body returned on success (HTTP 204).
-
----
-
-### Delete Experiments
-
-**DELETE /delete/experiments**
-
-Delete experiment records by experiment name.
-
-- No payload required.
-- No response body returned on success (HTTP 204).
-
----
-
-## Example Usage
-
-- See example routes in `routes-collection/bandit-brain-routes.har`
-
----
-
-## License
-
-This project is licensed under the MIT License. See the `LICENSE` file for details.
-
----
-
-## Disclaimer
-
-This software is provided for educational and research purposes only. It is not intended for commercial use. Use at your own risk.
+The project's direction is tracked in [ROADMAP.md](ROADMAP.md).
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request.
+Issues and pull requests are welcome. Please run `make check` before opening a PR so lint, types, and tests stay green.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+---
+
+## Open questions
+
+A few things in the code are ambiguous; flagging rather than guessing:
+
+1. **All-or-nothing allocation.** EG/UCB/TS return 100% to a single variant per call, and Thompson sampling is stochastic (different variant across calls on the same data). Should the README present this as the intended production behavior, or lead with it as a known limitation (as [ROADMAP.md](ROADMAP.md) Phase 1 frames it)?
+2. **`select()` asymmetry.** `SoftmaxBandit` has no `select()` method while the other three do. Is that intentional, or should the API be uniform?
+3. **PyPI / packaging.** Is there any intent to publish `banditbrain` to PyPI, or is source install the only supported path? The README currently assumes source-only.

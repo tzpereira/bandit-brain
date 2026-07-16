@@ -1,188 +1,155 @@
 # Bandit Brain — Roadmap
 
-Goal: evolve Bandit Brain from an interview take-home into a portfolio-grade experimentation platform where the algorithms are **mathematically correct**, their benefit is **empirically proven** (simulation + backtesting), and the engineering is **production-quality**.
+**Goal:** turn Bandit Brain into a portfolio-grade project where the bandit algorithms are **mathematically correct**, their benefit is **empirically proven offline**, and the engineering is clean. Scope is deliberately lean — depth over breadth.
 
-Positioning: Data Science depth on top of solid engineering. Streamlit dashboard stays. Public live demo at the end.
+**Thesis:** there is no configurable real-time feed here (the HTTP API is the only live surface), so the project doesn't pretend to be a streaming platform. Instead it goes **top-tier on offline evaluation** — rigorous backtesting and simulation that prove, with numbers and reproducible figures, that these policies beat a fixed A/B split on logged data. That rigor *is* the portfolio piece.
 
-How to use this file: check items off as they land (`[x]`). Each phase has a **Definition of Done** — don't start the next phase's core work until it's met. Phases 3–5 are independent of each other and can be reordered.
+**How to read this file:** check items off as they land (`[x]`). Each phase has a **Definition of Done** — don't start the next phase until it's met. Phases are ordered by priority; ship even if the optional phase is skipped.
 
----
-
-## Phase 0 — Engineering Foundation
-
-Everything after this phase must land with tests and pass CI.
-
-- [x] Restructure the repo into installable packages: `core/` (pure bandit engine, zero FastAPI/DB imports), `api/` (FastAPI layer), `dashboard/`, `simulation/`
-- [x] Adopt `uv` + `pyproject.toml` with pinned/locked dependencies (replace loose `requirements.txt`)
-- [x] Set up `pytest` with a first smoke-test suite (import + docker-compose healthcheck)
-- [x] Add `ruff` (lint + format) and `mypy` on the `core/` package
-- [x] GitHub Actions CI: lint → typecheck → tests on every PR/push
-- [x] Add `pre-commit` hooks mirroring CI
-- [x] Database migrations with Alembic (replace raw `schema.sql` bootstrap)
-- [x] Seed script for local dev data (`make seed`)
-
-**Definition of Done:** `docker compose up` works from a clean clone, CI is green, `core/` is importable and testable without a database.
+**Scope discipline:** anything not needed to prove the thesis is a non-goal. See [Non-goals](#non-goals) at the bottom — that list is a feature, not an omission.
 
 ---
 
-## Phase 1 — Correct Core Algorithms + Exploration/Exploitation Bias
+## Phase 0 — Engineering Foundation ✅
 
-Fix the conceptual flaws in the current implementations. This is the heart of the project — and directly addresses the interview feedback (no way to bias budget toward known-good ads).
+Done. Everything after this lands with tests and passes CI.
 
-### 1.1 Fractional allocations (fix the all-or-nothing bug)
+- [x] Installable packages: `core/` (pure engine, zero FastAPI/DB imports), `api/`, `dashboard/`, `simulation/`
+- [x] `uv` + `pyproject.toml` with a locked dependency set
+- [x] `pytest` suite (core policies, ingest validation, API smoke)
+- [x] `ruff` (lint + format) and `mypy` on `core/`
+- [x] GitHub Actions CI (lint → typecheck → tests) + mirrored `pre-commit` hooks
+- [x] Alembic migrations; `make seed` for local demo data
 
-Today EG/UCB/TS return 100% to one variant and 0% to the rest from a single random draw. For daily batch allocation this is wrong and non-reproducible.
+**Definition of Done:** `docker compose up` works from a clean clone, CI is green, `core/` is importable and testable without a database. ✅
 
-- [ ] **Thompson Sampling**: allocate proportional to `P(variant is best)` estimated via Monte Carlo over posterior samples (e.g. 10k draws), not a single sample
-- [ ] **Epsilon-Greedy**: allocate `(1 - ε)` to the empirical best and `ε / K` to each variant (deterministic given data)
-- [ ] **UCB**: deterministic top-arm allocation with explicit exploration floor, or normalized UCB scores — document the chosen batch adaptation and why
-- [ ] **Softmax**: keep proportional form; make `tau` semantics documented and tested (already the closest to correct)
-- [ ] All algorithms accept a seeded RNG (`numpy.random.Generator`) — same inputs + seed → same output
-- [ ] Shared `BanditPolicy` interface: `allocate(stats, config) -> list[Allocation]` with typed dataclasses/pydantic models
+---
 
-### 1.2 Exploration/exploitation bias controls (the interview gap)
+## Phase 1 — Correct Core Algorithms + Bias Controls
 
-- [ ] `min_allocation` / `max_allocation` floors and caps per variant (e.g. "never give a variant less than 5% or more than 80%")
-- [ ] `exploitation_bias` parameter: sharpen allocations toward proven winners (temperature on the P(best) distribution / epsilon decay schedule)
-- [ ] Informative Beta priors for TS: seed a variant's prior from historical performance so known-good ads start strong instead of at Beta(1,1)
-- [ ] "Protect the champion" mode: guarantee the incumbent variant a configurable share while challengers are explored
-- [ ] Expose all bias controls in the `/recommend` API and dashboard
+The substance. Fix the conceptual flaws in the current implementations and add the one control the original interview flagged as missing: biasing budget toward known-good variants.
+
+### 1.1 Fractional, reproducible allocations
+
+Today EG/UCB/TS hand 100% of traffic to a single variant from one random draw — wrong and non-reproducible for daily batch allocation.
+
+- [ ] Shared `BanditPolicy` interface: `allocate(metrics, config) -> list[Allocation]`, typed config per policy
+- [ ] **Thompson Sampling:** allocate proportional to `P(variant is best)` via Monte Carlo over the Beta posteriors (e.g. 10k draws), not a single sample
+- [ ] **Epsilon-Greedy:** `(1 − ε)` to the empirical best, `ε / K` to each variant (deterministic given data)
+- [ ] **UCB:** documented batch adaptation — top-arm with an explicit exploration floor, or normalized UCB scores
+- [ ] **Softmax:** keep the proportional form; document + test `tau` semantics (already closest to correct)
+- [ ] Seeded RNG (`numpy.random.Generator`) everywhere: same inputs + seed → identical output
+
+### 1.2 Bias controls (the interview gap)
+
+- [ ] `min_allocation` / `max_allocation` floors and caps per variant
+- [ ] Informative Beta priors for TS: seed a variant's prior from history so known-good variants start strong instead of at `Beta(1,1)`
+- [ ] "Protect the champion" mode: guarantee the incumbent a configurable share while challengers are explored
+- [ ] Expose the bias controls in `/recommend` and the dashboard
 
 ### 1.3 Statistical correctness
 
-- [ ] CTR confidence intervals via Wilson score (replace normal-approximation SE for small samples)
-- [ ] Handle zero-impression and zero-click variants explicitly in every algorithm (no silent `1.0` scores)
-- [ ] Unit tests against closed-form/known results (e.g. TS with overwhelming evidence → ~100% to winner; symmetric arms → ~uniform)
-- [ ] Property-based tests (hypothesis): allocations always sum to 1, respect floors/caps, are permutation-equivariant
+- [ ] Wilson-score CTR confidence intervals (replace the normal-approximation SE for small samples)
+- [ ] Explicit handling of zero-impression / zero-click variants in every policy (no silent `1.0` scores)
+- [ ] Unit tests against known results (overwhelming evidence → ~100% to winner; symmetric arms → ~uniform)
+- [ ] Property tests (hypothesis): allocations sum to 1, respect floors/caps, are permutation-equivariant
 
-**Definition of Done:** all four policies produce fractional, reproducible, floor/cap-respecting allocations; bias controls demonstrably shift budget toward proven variants; `core/` test coverage > 90%.
+**Definition of Done:** all four policies produce fractional, reproducible, floor/cap-respecting allocations; bias controls demonstrably shift budget toward proven variants; `core/` coverage > 90%.
 
 ---
 
-## Phase 2 — Prove It Works: Simulation & Backtesting
+## Phase 2 — Backtesting & Simulation (the centerpiece)
 
-The portfolio centerpiece. Nothing says "the algorithms really work" like regret curves against baselines.
+Top-tier offline evaluation. This is where the project earns its keep: prove the policies work on logged data and in controlled simulation, with reproducible evidence.
 
-### 2.1 Simulation framework (`simulation/` package)
+### 2.1 Offline replay on logged data (the headline)
 
-- [ ] Synthetic environment: Bernoulli arms with configurable true CTRs, arrival volumes, and noise
-- [ ] Environment variants: stationary, drifting CTRs, abrupt change-points, hour-of-day seasonality
-- [ ] Simulation runner: policy × environment × horizon × n_seeds → results dataframe (parallelized)
-- [ ] Baselines: uniform A/B split, oracle (always-best), fixed 90/10 split
+The gold standard for evaluating a bandit without deploying it.
 
-### 2.2 Evaluation metrics & analysis
+- [ ] Implement the **replay / rejection-sampling estimator** (Li et al., 2011) over logged events: step through history, only "accept" a logged event when the policy's choice matches the logged variant, accumulate reward on accepted events
+- [ ] Document the core assumption (logging policy ≈ uniform over variants) and what breaks if it doesn't hold
+- [ ] Report effective sample size / acceptance rate so the estimate's reliability is visible, not hidden
+- [ ] `banditbrain.simulation` API + a `POST /backtest` endpoint (or CLI): run a policy over an experiment's history, return what-if reward vs. what actually happened
+- [ ] Run it on the example CSV and any uploaded dataset
 
-- [ ] Cumulative regret and per-period regret curves (mean ± CI over seeds)
+### 2.2 Simulation environment + baselines
+
+- [ ] Synthetic Bernoulli-arm environment: configurable true CTRs, arrival volumes, seedable
+- [ ] Runner: policy × environment × horizon × n_seeds → tidy results dataframe
+- [ ] Baselines to beat: uniform A/B split, oracle (always-best), fixed 90/10 split
+
+### 2.3 Evaluation metrics
+
+- [ ] Cumulative and per-period **regret** curves (mean ± CI over seeds)
 - [ ] % of traffic on the true best arm over time
-- [ ] Business framing: extra clicks / saved cost vs uniform A/B at equal traffic
-- [ ] Sensitivity analysis: sweep `epsilon`, `c`, `tau`, priors — show tuning tradeoffs
-- [ ] Show the effect of the bias controls: with/without floors and informative priors (the interview-feedback money-shot)
+- [ ] Business framing: extra clicks / saved cost vs. uniform A/B at equal traffic
+- [ ] Sensitivity sweeps over `epsilon`, `c`, `tau`, and priors — the tuning story
+- [ ] With/without the Phase 1 bias controls — quantify the interview-feedback fix
 
-### 2.3 Offline replay on real data
-
-- [ ] Replay evaluation on logged data (Li et al. replay method) using the example CSV / uploaded datasets
-- [ ] `POST /backtest` endpoint (or CLI) that runs a policy over an experiment's history and reports what-if performance
-
-### 2.4 Publish the evidence
-
-- [ ] Analysis notebook(s) in `notebooks/` with narrative: problem → method → results
-- [ ] Export headline plots (regret curves, algorithm comparison) as images embedded in the README
-- [ ] "Results" section in README with a table: algorithm × environment → regret vs A/B baseline
-
-**Definition of Done:** one command reproduces every figure; README shows TS/UCB beating uniform A/B with numbers; bias controls shown reducing cost of exploration on known-good arms.
+**Definition of Done:** one command reproduces every figure with a fixed seed; the replay estimator runs on real logged data and reports its own reliability; simulation shows TS/UCB beating uniform A/B with numbers.
 
 ---
 
-## Phase 3 — Contextual Bandits
+## Phase 3 — Contextual Bandits *(optional / stretch)*
 
-Use the context data (`device`, `location`, `user_segment`, `hour`) that the schema stores but the algorithms currently ignore.
+Only after Phases 1–2 are solid. Uses the `device` / `location` / `user_segment` / `hour` context the schema already stores but the algorithms ignore. Highest data-science-interview value; skip without guilt if time is short.
 
-- [ ] Feature pipeline: context JSONB → model features (one-hot/target encoding), shared between training and serving
-- [ ] Baseline: per-segment independent bandits (separate Beta posteriors per `device × segment` cell) — simple, interpretable
-- [ ] **LinUCB** (disjoint model) implementation in `core/`
-- [ ] Contextual Thompson Sampling (Bayesian linear/logistic regression posterior)
+- [ ] Feature pipeline: context → model features (one-hot / target encoding), shared train/serve
+- [ ] Baseline: per-segment independent bandits (separate Beta posteriors per `device × segment`) — simple, interpretable
+- [ ] **LinUCB** (disjoint model) in `core/`
 - [ ] Extend `/recommend` to accept a context and return context-conditional allocations
-- [ ] Simulation: environments where the best arm depends on context — show contextual policies beating context-blind ones
-- [ ] Dashboard: allocation heatmap per segment (which variant wins where)
-- [ ] Notebook: "when does context help?" analysis
+- [ ] Simulation where the best arm depends on context — show contextual beating context-blind
+- [ ] Dashboard: per-segment allocation heatmap (which variant wins where)
 
 **Definition of Done:** contextual policies demonstrably outperform context-blind ones on heterogeneous environments in simulation, exposed end-to-end (API + dashboard).
 
 ---
 
-## Phase 4 — Non-Stationarity & Delayed Rewards
+## Phase 4 — Reproducible Results + Local Polish *(portfolio deliverable 1)*
 
-Real ad performance drifts and conversions arrive late. Handle both.
+Make the evidence undeniable and the repo navigable.
 
-### 4.1 Non-stationary environments
+- [ ] `notebooks/` (or a script) with the narrative: problem → method → results
+- [ ] One command regenerates every headline figure (regret curves, algorithm comparison, replay results)
+- [ ] **README "Results" section**: lead with the plots and a table (algorithm × environment → regret vs. A/B), then architecture, then quickstart
+- [ ] Architecture diagram (mermaid) in the README
+- [ ] Delete routes take explicit filters (today they wipe all of a user's records with no payload — dangerous)
+- [ ] Split the 600-line `dashboard/app.py` into pages/modules
+- [ ] Answer the three open questions in the README (all-or-nothing allocation, `select()` asymmetry, packaging)
 
-- [ ] Sliding-window statistics (configurable lookback) for all policies
-- [ ] Discounted Thompson Sampling / discounted UCB (exponential decay of evidence, configurable half-life)
-- [ ] Optional change-point detection (e.g. Page-Hinkley) that resets/inflates uncertainty on drift
-- [ ] Simulation: drifting and change-point environments — show discounted variants recovering faster than vanilla
-- [ ] Expose `window` / `decay` parameters in API + dashboard
-
-### 4.2 Delayed rewards
-
-- [ ] Model reward delay in the simulator (clicks/conversions arriving with a lag distribution)
-- [ ] Ingestion supports late-arriving events updating past dates (idempotent upserts)
-- [ ] Delay-aware correction: down-weight recent incomplete periods or use expected-delay imputation — document the chosen approach
-- [ ] Simulation: show naive policies over-penalizing recent variants vs the delay-aware version
-
-**Definition of Done:** simulations demonstrate faster adaptation to drift and unbiased handling of reward lag, with parameters exposed and documented.
+**Definition of Done:** an unfamiliar dev goes from README to understanding the results and running the figures in ~10 minutes; every figure is reproducible from a clean clone.
 
 ---
 
-## Phase 5 — Budget-Aware Allocation
+## Phase 5 — Public Demo *(portfolio deliverable 2)*
 
-Move from "share of traffic" to "share of money" — the framing ad platforms actually care about.
+A recruiter clicks a link and explores a working instance with zero setup.
 
-- [ ] Objective switch: optimize clicks (CTR), cost-efficiency (CPC), or value (configurable reward definition)
-- [ ] Budget constraint: allocate a daily budget across variants given cost-per-impression estimates
-- [ ] Constrained allocation: floors/caps in currency, not just percentage
-- [ ] ROI-based bandit: reward = value − cost, with uncertainty on both
-- [ ] Simulation: budget scenarios showing higher total return vs proportional-traffic allocation
-- [ ] API: `/recommend` accepts `budget` and `objective`; response includes per-variant spend
+- [ ] Deploy API + dashboard + Postgres to one host (Railway / Fly.io / Render — document the choice)
+- [ ] Demo mode: seeded realistic dataset + read-only demo account (or auto-login)
+- [ ] Guardrails: rate limiting on auth routes, upload size caps, nightly demo-data reset
+- [ ] Fresh demo GIF/screenshots of the current dashboard
+- [ ] `CONTRIBUTING.md` + a tagged `v1.0.0` release with a changelog
+- [ ] Link from portfolio/CV with the headline metric (e.g. "−X% regret vs. A/B in simulation")
 
-**Definition of Done:** given a budget and an objective, the platform returns a spend plan, and simulation shows it beats naive traffic-proportional spending.
-
----
-
-## Phase 6 — Platform Hardening (API + Dashboard)
-
-- [ ] API redesign: experiments as first-class resources (`/experiments/{id}/recommendations`), consistent REST semantics, keyset pagination
-- [ ] Versioned API (`/v1`), typed error responses, request IDs
-- [ ] Auth hardening: refresh tokens, password policy, rate limiting on auth routes
-- [ ] Delete routes take explicit filters (today they delete without payload — dangerous)
-- [ ] Structured logging (JSON) + basic metrics endpoint (Prometheus-style)
-- [ ] Async DB access or connection pooling review; N+1 / full-scan audit on repositories
-- [ ] Integration test suite against a real Postgres (testcontainers) covering every route
-- [ ] Dashboard refactor: split 635-line `app.py` into pages (`Experiments`, `Recommendations`, `Simulation Lab`, `Backtest`) and modules
-- [ ] Dashboard "Simulation Lab" page: pick environment + policies, run, see regret curves interactively
-- [ ] Load/perf sanity check: ingest 1M rows, recommend under 500ms
-
-**Definition of Done:** every endpoint integration-tested, dashboard modular, an unfamiliar dev can navigate the codebase from the README in 10 minutes.
+**Definition of Done:** from a link, a recruiter interacts with the live demo and reads the results in under two minutes.
 
 ---
 
-## Phase 7 — Public Demo & Portfolio Polish
+## Non-goals
 
-- [ ] Deploy API + dashboard + Postgres to Railway/Fly.io/Render (pick one, document the choice)
-- [ ] Demo mode: seeded realistic dataset + read-only demo account (or auto-login) so recruiters explore with zero setup
-- [ ] Nightly reset job for demo data; abuse guardrails (rate limits, upload size caps)
-- [ ] README rewrite: lead with the problem and the **results** (plots, numbers), then architecture diagram, then quickstart; keep API reference in `docs/`
-- [ ] Fresh demo GIF/screenshots of the new dashboard
-- [ ] Architecture diagram (excalidraw/mermaid) in README
-- [ ] Write-up (blog post or `docs/DESIGN.md`): "Building a bandit platform that actually reduces regret" — includes the interview-feedback story and how bias controls solve it
-- [ ] Add `CONTRIBUTING.md`, issue templates, tagged `v1.0.0` release with changelog
-- [ ] Link from portfolio/LinkedIn/CV with the headline metric (e.g. "−X% regret vs A/B testing in simulation")
+Explicitly out of scope for this lean version. Each is defensible and interview-ready as "I scoped this out on purpose because the offline-evaluation story is what proves the algorithms work — these would add surface area without strengthening that thesis."
 
-**Definition of Done:** a recruiter can go from a link to interacting with a live demo and reading results in under two minutes.
+- **Real-time / streaming ingestion** beyond the batch HTTP API. There's no configurable real-time feed; the project commits to rigorous *offline* evaluation instead.
+- **Non-stationarity & drift handling** (sliding windows, discounted TS/UCB, change-point detection). Interesting, but a second research thread on top of an already-complete story.
+- **Delayed-reward modeling** (lagged conversions, idempotent upserts of late events). Same reason.
+- **Budget-aware / ROI allocation** (spend plans, CPC/value objectives, currency floors). A whole product direction of its own.
+- **Heavy platform hardening** (API versioning, refresh tokens, keyset pagination, Prometheus metrics, testcontainers integration suite). The minimum safety items (delete filters, auth rate limiting) are folded into Phases 4–5; the rest is enterprise polish beyond a portfolio piece.
 
 ---
 
-## Suggested order & scope guardrails
+## Suggested order
 
-1. Phases **0 → 1 → 2** are the critical path — after Phase 2 the project is already a strong portfolio piece.
-2. Phases **3, 4, 5** are independent; pick the next one based on energy/interviews (contextual bandits have the highest DS-interview value).
-3. Phases **6 → 7** close it out. Ship the demo even if 3–5 are partially done — a live demo of a correct core beats an unfinished maximal scope.
+1. **Phase 1 → 2** is the critical path. After Phase 2 the project is already a strong portfolio piece.
+2. **Phase 3** is optional — do it only if the core + backtesting are solid and there's appetite for the highest-DS-value extension.
+3. **Phase 4 → 5** close it out. Ship the demo even if Phase 3 is skipped — a live demo of a correct, empirically-validated core beats an unfinished maximal scope.
