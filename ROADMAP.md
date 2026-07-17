@@ -73,20 +73,20 @@ The canonical shape every real CB system (VW, Personalizer) is built on. Without
 
 Today EG/UCB/TS hand 100% to one variant from a single draw — wrong and non-reproducible for batch allocation.
 
-- [ ] Shared `BanditPolicy` interface: `allocate(state, config) -> Allocation` (distribution over arms), typed config per policy
-- [ ] **Thompson Sampling:** allocate ∝ `P(arm is best)` via Monte Carlo over Beta posteriors (not one sample)
-- [ ] **Epsilon-Greedy:** `(1 − ε)` to the empirical best, `ε / K` to each arm (deterministic given data)
-- [ ] **UCB:** documented batch adaptation (top-arm with exploration floor, or normalized scores)
-- [ ] **Softmax:** keep proportional form; document + test `tau`
-- [ ] Seeded RNG everywhere: same inputs + seed → identical output
+- [x] Shared `BanditPolicy` interface: `allocate(state, config) -> Allocation` (distribution over arms), typed config per policy
+- [x] **Thompson Sampling:** allocate ∝ `P(arm is best)` via Monte Carlo over Beta posteriors (not one sample)
+- [x] **Epsilon-Greedy:** `(1 − ε)` to the empirical best, `ε / K` to each arm (deterministic given data)
+- [x] **UCB:** documented batch adaptation (top-arm with exploration floor, or normalized scores)
+- [x] **Softmax:** keep proportional form; document + test `tau`
+- [x] Seeded RNG everywhere: same inputs + seed → identical output
 
 #### 1.2 Serve, log, and learn (the loop, VW/Personalizer-style)
 
-- [ ] **`POST /decide`** (the *Rank* half): sample an arm from the current allocation, return it — the endpoint an ad server calls; enforce a documented **latency budget** (e.g. p99 < 50 ms)
-- [ ] Every decision logged with: chosen arm, **propensity** `P(arm | state)`, `decision_source` (`served` | `byo`), **policy version + params**, `decision_id`, timestamp
-- [ ] **`POST /reward`** (the *Reward* half): report an outcome attributed to a `decision_id` — the split-API contract real systems use
-- [ ] **Learn:** policy state updates from attributed rewards on a defined cadence (batch or incremental); document the update model
-- [ ] Data model: a per-decision table carrying propensity + provenance + policy version (Alembic migration); aggregated metrics become a derived view
+- [x] **`POST /decide`** (the *Rank* half): sample an arm from the current allocation, return it — the endpoint an ad server calls; enforce a documented **latency budget** (e.g. p99 < 50 ms) — measured locally: p50 8.5ms / p95 13.4ms / p99 14.5ms over 200 requests
+- [x] Every decision logged with: chosen arm, **propensity** `P(arm | state)`, `decision_source` (`served` | `byo`), **policy version + params**, `decision_id`, timestamp
+- [x] **`POST /reward`** (the *Reward* half): report an outcome attributed to a `decision_id` — the split-API contract real systems use
+- [x] **Learn:** policy state updates from attributed rewards on a defined cadence (batch or incremental); document the update model — served decisions+rewards are folded into `get_experiments_metrics` (ungrouped view) so the next `/recommend` batch run sees live traffic; reward is binary (click-equivalent) for now, one per decision
+- [x] Data model: a per-decision table carrying propensity + provenance + policy version (Alembic migration); aggregated metrics become a derived view — `decisions`/`rewards` tables (migration 0003), `allocations.params` carries policy version
 - [ ] **BYO-logs mode:** `/ingest` accepts a client `propensity`; when absent, record `unlabeled` (assume-uniform) so OPE can downgrade rather than silently bias
 
 #### 1.3 Bias controls + statistical correctness
