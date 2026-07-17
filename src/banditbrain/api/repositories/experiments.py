@@ -3,6 +3,7 @@ import json
 from banditbrain.api.config import get_db_connection
 from banditbrain.api.serialization import serialize_row
 from banditbrain.core.models import Experiment, Metric
+from banditbrain.core.stats import standard_error, wilson_score_interval
 
 
 def get_experiments(
@@ -147,26 +148,7 @@ def get_experiments_metrics(
             ) combined
             GROUP BY variant_name, device, location, user_segment
         )
-        SELECT
-            variant_name,
-            clicks,
-            total_cost,
-            impressions,
-            device,
-            location,
-            user_segment,
-            CASE WHEN clicks > 0 THEN total_cost / clicks ELSE NULL END AS cpc,
-            CASE WHEN impressions > 0 THEN total_cost / impressions ELSE NULL END AS cpv,
-            CASE WHEN impressions > 0 THEN clicks::float / impressions ELSE 0 END AS ctr,
-            CASE WHEN impressions > 0 AND ((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions) >= 0 THEN
-                SQRT((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions)
-            ELSE 0 END AS ctr_se,
-            CASE WHEN impressions > 0 AND ((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions) >= 0 THEN
-                GREATEST((clicks::float / impressions) - 1.96 * SQRT((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions), 0)
-            ELSE 0 END AS ctr_ci_lower,
-            CASE WHEN impressions > 0 AND ((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions) >= 0 THEN
-                (clicks::float / impressions) + 1.96 * SQRT((clicks::float / impressions) * (1 - (clicks::float / impressions)) / impressions)
-            ELSE 0 END AS ctr_ci_upper
+        SELECT variant_name, clicks, total_cost, impressions, device, location, user_segment
         FROM agg
         ORDER BY {order_fields};
     """
@@ -176,25 +158,29 @@ def get_experiments_metrics(
     cur.close()
     conn.close()
 
-    metrics = [
-        {
-            "variant_name": row[0],
-            "clicks": row[1],
-            "total_cost": row[2],
-            "impressions": row[3],
-            "device": row[4],
-            "location": row[5],
-            "user_segment": row[6],
-            "cpc": row[7],
-            "cpv": row[8],
-            "ctr": row[9],
-            "ctr_se": row[10],
-            "ctr_ci_lower": row[11],
-            "ctr_ci_upper": row[12],
-        }
-        for row in rows
-    ]
-    return [Metric(**m) for m in metrics]
+    metrics = []
+    for variant_name, clicks, total_cost, impressions, device, location, user_segment in rows:
+        clicks = int(clicks)
+        impressions = int(impressions)
+        ci_lower, ci_upper = wilson_score_interval(clicks, impressions)
+        metrics.append(
+            Metric(
+                variant_name=variant_name,
+                clicks=clicks,
+                total_cost=total_cost,
+                impressions=impressions,
+                device=device,
+                location=location,
+                user_segment=user_segment,
+                cpc=total_cost / clicks if clicks > 0 else None,
+                cpv=total_cost / impressions if impressions > 0 else None,
+                ctr=clicks / impressions if impressions > 0 else 0.0,
+                ctr_se=standard_error(clicks, impressions),
+                ctr_ci_lower=ci_lower,
+                ctr_ci_upper=ci_upper,
+            )
+        )
+    return metrics
 
 
 def insert_experiments_batch(user_id: int, experiments: list[Experiment]) -> None:
