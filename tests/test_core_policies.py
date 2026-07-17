@@ -132,6 +132,33 @@ def test_thompson_is_reproducible_given_a_seed(metrics):
     np.testing.assert_array_equal(first, second)
 
 
+def test_thompson_informative_prior_lets_a_known_good_arm_start_strong():
+    # Both arms are brand new (zero data this experiment); without an informative
+    # prior they'd split ~50/50. Seeding C's prior from a strong history (80% CTR,
+    # high confidence) should make it dominate despite having no current-experiment data.
+    m = [make_metric("A", 0, 0), make_metric("C", 0, 0)]
+    flat = ThompsonSamplingBandit(m, seed=0).allocate()
+    assert flat == pytest.approx([0.5, 0.5], abs=0.05)
+
+    # C ~ Beta(800, 200) is tightly concentrated around 0.8; A stays uninformative
+    # Beta(1, 1) (uniform on [0, 1]), so P(C > A) ~ 0.8 — a strong tilt from 50/50.
+    informed = ThompsonSamplingBandit(m, seed=0, priors={"C": (800.0, 200.0)}).allocate()
+    by_variant = dict(zip(["A", "C"], informed, strict=True))
+    assert by_variant["C"] == pytest.approx(0.8, abs=0.03)
+
+
+def test_thompson_prior_rejects_non_positive_parameters():
+    m = [make_metric("A", 100, 10), make_metric("B", 100, 5)]
+    with pytest.raises(AssertionError, match="alpha > 0 and beta > 0"):
+        ThompsonSamplingBandit(m, priors={"A": (0.0, 1.0)})
+
+
+def test_thompson_params_include_priors_for_replay():
+    m = [make_metric("A", 100, 10), make_metric("B", 100, 5)]
+    bandit = ThompsonSamplingBandit(m, priors={"A": (5.0, 2.0)})
+    assert bandit.params() == {"n_samples": 10_000, "priors": {"A": (5.0, 2.0)}}
+
+
 def test_softmax_favors_better_variants(metrics):
     allocations = SoftmaxBandit(metrics, tau=0.1, experiment_name="exp", date="2026-01-01").get_allocation()
     by_variant = {a.variant_name: a.allocated_pct for a in allocations}

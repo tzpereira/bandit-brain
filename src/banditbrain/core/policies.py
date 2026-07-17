@@ -24,6 +24,56 @@ from banditbrain.core.models import Allocation, Metric
 DEFAULT_TS_SAMPLES = 10_000
 
 
+def project_to_floor_cap(probs: np.ndarray, floors: np.ndarray, caps: np.ndarray) -> np.ndarray:
+    """
+    Redistribute a probability vector so every entry respects its own floor/cap
+    while the vector still sums to 1 — water-filling onto a box-constrained simplex.
+
+    Every arm starts pinned to its floor; the remaining budget (1 - sum(floors))
+    is then handed out in proportion to each arm's raw score, capped per arm, with
+    any overflow rolled into the next round and re-distributed among the arms that
+    still have headroom (equally, if their raw scores are all zero). This keeps
+    relative preference among unconstrained arms intact while guaranteeing every
+    floor/cap is respected — including pathological cases where a zero-preference
+    arm must still absorb mass because a preferred arm is capped below 1/n.
+    Requires ``sum(floors) <= 1 <= sum(caps)``.
+    """
+    n = len(probs)
+    if floors.sum() > 1.0 + 1e-9:
+        raise ValueError(f"floors sum to {floors.sum():.4f} > 1 — infeasible")
+    if caps.sum() < 1.0 - 1e-9:
+        raise ValueError(f"caps sum to {caps.sum():.4f} < 1 — infeasible")
+
+    result = floors.astype(float).copy()
+    remaining = 1.0 - result.sum()
+    active = np.ones(n, dtype=bool)  # arms not yet pinned to their cap
+    weights = probs.astype(float)
+
+    for _ in range(n + 1):
+        if remaining <= 1e-12 or not active.any():
+            break
+        room = caps - result
+        active_room = active & (room > 1e-12)
+        if not active_room.any():
+            break
+
+        weight_sum = weights[active_room].sum()
+        share = (
+            weights[active_room] / weight_sum * remaining
+            if weight_sum > 0
+            else np.full(int(active_room.sum()), remaining / active_room.sum())
+        )
+        tentative = result[active_room] + share
+        overflowing = tentative > caps[active_room] + 1e-12
+        overflow = float((tentative[overflowing] - caps[active_room][overflowing]).sum())
+
+        result[active_room] = np.minimum(tentative, caps[active_room])
+        active[np.where(active_room)[0][overflowing]] = False
+        remaining = overflow
+
+    return result
+
+
 class BanditPolicy(ABC):
     """
     Shared interface for every allocation policy.
@@ -42,7 +92,13 @@ class BanditPolicy(ABC):
         experiment_name: str = "",
         date: str | None = None,
         seed: int | None = None,
+        min_allocation: float = 0.0,
+        max_allocation: float = 1.0,
+        champion: str | None = None,
+        champion_min_allocation: float = 0.0,
     ):
+        assert 0.0 <= min_allocation <= max_allocation <= 1.0, "require 0 <= min_allocation <= max_allocation <= 1"
+        assert 0.0 <= champion_min_allocation <= 1.0, "champion_min_allocation must be in [0, 1]"
         self.metrics = metrics
         self.variant_names = [m.variant_name for m in metrics]
         self.experiment_name = experiment_name
@@ -50,18 +106,35 @@ class BanditPolicy(ABC):
         # A per-instance generator keeps sampling reproducible and isolated from the
         # global numpy RNG state. Same metrics + same seed -> identical allocation.
         self.rng = np.random.default_rng(seed)
+        # Bias controls: floors/caps every policy respects after computing its raw
+        # preference, plus an optional "protect the champion" floor for one variant.
+        self.min_allocation = min_allocation
+        self.max_allocation = max_allocation
+        self.champion = champion
+        self.champion_min_allocation = champion_min_allocation
 
     @abstractmethod
     def allocate(self) -> np.ndarray:
-        """Return the traffic distribution over ``self.variant_names`` (sums to 1)."""
+        """Return the policy's raw traffic distribution over ``self.variant_names`` (sums to 1)."""
         raise NotImplementedError
 
     def params(self) -> dict:
         """Policy parameters for this allocation — the 'version' a served decision is replayed against."""
         return {}
 
+    def _apply_bias_controls(self, probs: np.ndarray) -> np.ndarray:
+        n = len(probs)
+        floors = np.full(n, self.min_allocation)
+        caps = np.full(n, self.max_allocation)
+        if self.champion is not None:
+            if self.champion not in self.variant_names:
+                raise ValueError(f"champion {self.champion!r} is not among the experiment's variants")
+            idx = self.variant_names.index(self.champion)
+            floors[idx] = max(floors[idx], self.champion_min_allocation)
+        return project_to_floor_cap(probs, floors, caps)
+
     def get_allocation(self) -> list[Allocation]:
-        probs = self.allocate()
+        probs = self._apply_bias_controls(self.allocate())
         prediction_date_str = get_prediction_date(self.date)
         params = self.params()
         return [
@@ -102,9 +175,10 @@ class EpsilonGreedyBandit(BanditPolicy):
         experiment_name: str = "",
         date: str | None = None,
         seed: int | None = None,
+        **bias_controls,
     ):
         assert 0.0 <= epsilon <= 1.0, "epsilon must be in [0, 1]"
-        super().__init__(metrics, experiment_name=experiment_name, date=date, seed=seed)
+        super().__init__(metrics, experiment_name=experiment_name, date=date, seed=seed, **bias_controls)
         self.epsilon = epsilon
 
     def params(self) -> dict:
@@ -147,10 +221,11 @@ class UCBBandit(BanditPolicy):
         experiment_name: str = "",
         date: str | None = None,
         seed: int | None = None,
+        **bias_controls,
     ):
         assert c > 0, "c must be positive"
         assert 0.0 <= exploration_floor <= 1.0, "exploration_floor must be in [0, 1]"
-        super().__init__(metrics, experiment_name=experiment_name, date=date, seed=seed)
+        super().__init__(metrics, experiment_name=experiment_name, date=date, seed=seed, **bias_controls)
         self.c = c
         self.exploration_floor = exploration_floor
         self.total_impressions = sum(m.impressions for m in metrics) + 1
@@ -190,6 +265,11 @@ class ThompsonSamplingBandit(BanditPolicy):
     (the old behaviour) collapses to one winner and throws away this probability;
     the Monte Carlo estimate is the correct fractional allocation. Reproducible
     given the metrics and a seed.
+
+    Priors: defaults to the uninformative Beta(1, 1) per arm. Pass ``priors`` to
+    seed a variant's posterior from history (e.g. pseudo-counts from a prior
+    experiment or a longer look-back window) so a known-good variant starts
+    strong instead of at 50/50 uncertainty.
     """
 
     algorithm = "ts"
@@ -199,28 +279,29 @@ class ThompsonSamplingBandit(BanditPolicy):
         metrics: list[Metric],
         *,
         n_samples: int = DEFAULT_TS_SAMPLES,
+        priors: dict[str, tuple[float, float]] | None = None,
         experiment_name: str = "",
         date: str | None = None,
         seed: int | None = None,
+        **bias_controls,
     ):
         assert n_samples > 0, "n_samples must be positive"
-        super().__init__(metrics, experiment_name=experiment_name, date=date, seed=seed)
+        for variant, (alpha, beta) in (priors or {}).items():
+            assert alpha > 0 and beta > 0, f"prior for {variant!r} must have alpha > 0 and beta > 0"
+        super().__init__(metrics, experiment_name=experiment_name, date=date, seed=seed, **bias_controls)
         self.n_samples = n_samples
+        self.priors = priors or {}
 
     def params(self) -> dict:
-        return {"n_samples": self.n_samples}
+        return {"n_samples": self.n_samples, "priors": self.priors}
 
     def allocate(self) -> np.ndarray:
         n = len(self.metrics)
         samples = np.empty((n, self.n_samples))
         for i, m in enumerate(self.metrics):
-            # Beta(1, 1) prior; a never-shown arm stays uniform on [0, 1].
-            alpha = 1.0 + m.clicks
-            beta = 1.0 + (m.impressions - m.clicks)
-            # Defensive clamp: the schema enforces clicks <= impressions, so alpha
-            # and beta are already >= 1, but guard against degenerate inputs.
-            alpha = max(alpha, 1e-9)
-            beta = max(beta, 1e-9)
+            prior_alpha, prior_beta = self.priors.get(m.variant_name, (1.0, 1.0))
+            alpha = prior_alpha + m.clicks
+            beta = prior_beta + (m.impressions - m.clicks)
             samples[i] = self.rng.beta(alpha, beta, size=self.n_samples)
         winners = np.argmax(samples, axis=0)
         counts = np.bincount(winners, minlength=n)
@@ -248,9 +329,10 @@ class SoftmaxBandit(BanditPolicy):
         experiment_name: str = "",
         date: str | None = None,
         seed: int | None = None,
+        **bias_controls,
     ):
         assert tau > 0, "tau must be positive"
-        super().__init__(metrics, experiment_name=experiment_name, date=date, seed=seed)
+        super().__init__(metrics, experiment_name=experiment_name, date=date, seed=seed, **bias_controls)
         self.tau = tau
 
     def params(self) -> dict:
