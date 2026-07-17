@@ -53,6 +53,13 @@ def get_experiments_metrics(
 ) -> list[Metric]:
     """
     Retrieve aggregated metrics for experiments, optionally filtered by experiment_name and date.
+
+    This is the "learn" half of the serve -> log -> learn loop: when group_by_context
+    is False, served traffic (decisions logged via POST /decide, outcomes attributed
+    via POST /reward) is folded in alongside batch-ingested data, so the next
+    /recommend call reflects live traffic. Served decisions carry no context
+    breakdown yet (contextual decisioning is a later phase), so the per-context view
+    (group_by_context=True) reflects batch-ingested data only.
     """
     conn = get_db_connection()
     cur = conn.cursor()
@@ -76,16 +83,69 @@ def get_experiments_metrics(
         """
         order_fields = "variant_name"
 
+    params: list = []
+    where_clauses = ["user_id = %s"]
+    params.append(user_id)
+    if experiment_name:
+        where_clauses.append("experiment_name = %s")
+        params.append(experiment_name)
+    if date:
+        where_clauses.append("event_date <= %s")
+        params.append(date)
+    where_clause = "WHERE " + " AND ".join(where_clauses)
+
+    served_cte = ""
+    served_union = ""
+    if not group_by_context:
+        served_where_clauses = ["d.user_id = %s"]
+        params.append(user_id)
+        if experiment_name:
+            served_where_clauses.append("d.experiment_name = %s")
+            params.append(experiment_name)
+        if date:
+            served_where_clauses.append("d.created_at::date <= %s")
+            params.append(date)
+        served_where = "WHERE " + " AND ".join(served_where_clauses)
+        served_cte = f"""
+        , served AS (
+            SELECT
+                d.variant_name,
+                'all' AS device,
+                'all' AS location,
+                'all' AS user_segment,
+                COALESCE(SUM(r.reward), 0) AS clicks,
+                0::float AS total_cost,
+                COUNT(d.decision_id) AS impressions
+            FROM decisions d
+            LEFT JOIN rewards r ON r.decision_id = d.decision_id
+            {served_where}
+            GROUP BY d.variant_name
+        )
+        """
+        served_union = "UNION ALL SELECT * FROM served"
+
     query = f"""
-        WITH agg AS (
+        WITH ingested AS (
             SELECT
                 {select_fields}
                 SUM(clicks) AS clicks,
                 SUM(cost) AS total_cost,
                 SUM(impressions) AS impressions
             FROM experiments
-            {{where_clause}}
+            {where_clause}
             GROUP BY {group_fields}
+        ){served_cte},
+        agg AS (
+            SELECT
+                variant_name, device, location, user_segment,
+                SUM(clicks) AS clicks,
+                SUM(total_cost) AS total_cost,
+                SUM(impressions) AS impressions
+            FROM (
+                SELECT * FROM ingested
+                {served_union}
+            ) combined
+            GROUP BY variant_name, device, location, user_segment
         )
         SELECT
             variant_name,
@@ -110,25 +170,6 @@ def get_experiments_metrics(
         FROM agg
         ORDER BY {order_fields};
     """
-
-    params = []
-    where_clauses = []
-
-    where_clauses.append("user_id = %s")
-    params.append(user_id)
-
-    if experiment_name:
-        where_clauses.append("experiment_name = %s")
-        params.append(experiment_name)
-    if date:
-        where_clauses.append("event_date <= %s")
-        params.append(date)
-
-    where_clause = ""
-    if where_clauses:
-        where_clause = "WHERE " + " AND ".join(where_clauses)
-
-    query = query.format(where_clause=where_clause)
 
     cur.execute(query, tuple(params))
     rows = cur.fetchall()

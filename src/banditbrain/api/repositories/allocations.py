@@ -1,3 +1,5 @@
+import json
+
 from banditbrain.api.config import get_db_connection
 from banditbrain.api.serialization import serialize_row
 from banditbrain.core.models import Allocation
@@ -18,7 +20,7 @@ def get_allocations(
     cur = conn.cursor()
 
     query = """
-        SELECT id, experiment_name, variant_name, allocated_pct, algorithm, date, created_at
+        SELECT id, experiment_name, variant_name, allocated_pct, algorithm, params, date, created_at
         FROM allocations
     """
     params = []
@@ -50,6 +52,35 @@ def get_allocations(
     return [Allocation(**serialize_row(row, columns)) for row in rows]
 
 
+def get_latest_allocation_batch(user_id: int, experiment_name: str, algorithm: str) -> list[Allocation]:
+    """
+    Retrieve the most recently computed allocation batch (every variant, same date)
+    for an experiment + algorithm. This is what POST /decide samples an arm from.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, experiment_name, variant_name, allocated_pct, algorithm, params, date, created_at
+        FROM allocations
+        WHERE user_id = %s AND experiment_name = %s AND algorithm = %s
+          AND date = (
+              SELECT date FROM allocations
+              WHERE user_id = %s AND experiment_name = %s AND algorithm = %s
+              ORDER BY date DESC, created_at DESC
+              LIMIT 1
+          )
+        ORDER BY variant_name;
+        """,
+        (user_id, experiment_name, algorithm, user_id, experiment_name, algorithm),
+    )
+    rows = cur.fetchall()
+    columns = [desc[0] for desc in cur.description]
+    cur.close()
+    conn.close()
+    return [Allocation(**serialize_row(row, columns)) for row in rows]
+
+
 def insert_allocation(data: Allocation, user_id: int) -> None:
     """
     Inserts a new allocation record into the database.
@@ -60,8 +91,8 @@ def insert_allocation(data: Allocation, user_id: int) -> None:
 
     cur.execute(
         """
-        INSERT INTO allocations (user_id, experiment_name, variant_name, allocated_pct, algorithm, date)
-        VALUES (%s, %s, %s, %s, %s, %s);
+        INSERT INTO allocations (user_id, experiment_name, variant_name, allocated_pct, algorithm, params, date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s);
         """,
         (
             user_id,
@@ -69,6 +100,7 @@ def insert_allocation(data: Allocation, user_id: int) -> None:
             data.variant_name,
             data.allocated_pct,
             data.algorithm,
+            json.dumps(data.params) if data.params is not None else None,
             data.date,
         ),
     )
@@ -86,13 +118,24 @@ def insert_allocations_batch(allocations: list[Allocation], user_id: int) -> Non
         return
     conn = get_db_connection()
     cur = conn.cursor()
-    values = [(user_id, d.experiment_name, d.variant_name, d.allocated_pct, d.algorithm, d.date) for d in allocations]
+    values = [
+        (
+            user_id,
+            d.experiment_name,
+            d.variant_name,
+            d.allocated_pct,
+            d.algorithm,
+            json.dumps(d.params) if d.params is not None else None,
+            d.date,
+        )
+        for d in allocations
+    ]
     cur.executemany(
         """
-        INSERT INTO allocations (user_id, experiment_name, variant_name, allocated_pct, algorithm, date)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO allocations (user_id, experiment_name, variant_name, allocated_pct, algorithm, params, date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (user_id, experiment_name, variant_name, algorithm, date)
-        DO UPDATE SET allocated_pct = EXCLUDED.allocated_pct, created_at = NOW();
+        DO UPDATE SET allocated_pct = EXCLUDED.allocated_pct, params = EXCLUDED.params, created_at = NOW();
         """,
         values,
     )
