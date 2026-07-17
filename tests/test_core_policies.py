@@ -41,7 +41,7 @@ def metrics() -> list[Metric]:
     [
         (lambda m: EpsilonGreedyBandit(m, epsilon=0.1, experiment_name="exp", date="2026-01-01"), "eg"),
         (lambda m: UCBBandit(m, c=2.0, experiment_name="exp", date="2026-01-01"), "ucb"),
-        (lambda m: ThompsonSamplingBandit(m, experiment_name="exp", date="2026-01-01"), "ts"),
+        (lambda m: ThompsonSamplingBandit(m, experiment_name="exp", date="2026-01-01", seed=0), "ts"),
         (lambda m: SoftmaxBandit(m, tau=0.1, experiment_name="exp", date="2026-01-01"), "softmax"),
     ],
 )
@@ -54,6 +54,79 @@ def test_policy_allocations_are_valid(metrics, bandit_factory, algorithm):
     assert sum(a.allocated_pct for a in allocations) == pytest.approx(1.0)
     # Allocation is always a next-day forecast.
     assert all(a.date == "2026-01-02" for a in allocations)
+
+
+@pytest.mark.parametrize(
+    "bandit_factory",
+    [
+        lambda m: EpsilonGreedyBandit(m, epsilon=0.1),
+        lambda m: UCBBandit(m, c=2.0),
+        lambda m: ThompsonSamplingBandit(m, seed=0),
+        lambda m: SoftmaxBandit(m, tau=0.1),
+    ],
+)
+def test_allocations_are_fractional_not_all_or_nothing(metrics, bandit_factory):
+    # Every policy must split traffic across more than one variant, not hand 100%
+    # to a single winner.
+    probs = bandit_factory(metrics).allocate()
+    assert np.count_nonzero(probs) > 1
+
+
+def test_epsilon_greedy_distribution():
+    # A has a uniquely highest CTR (15%); it gets (1 - eps) + eps/K, the rest eps/K.
+    m = [make_metric("A", 1000, 150), make_metric("B", 1000, 80), make_metric("C", 1000, 60)]
+    probs = EpsilonGreedyBandit(m, epsilon=0.15).allocate()
+    k = len(m)
+    by_variant = dict(zip(["A", "B", "C"], probs, strict=True))
+    assert by_variant["A"] == pytest.approx(0.85 + 0.15 / k)
+    assert by_variant["B"] == pytest.approx(0.15 / k)
+    assert by_variant["C"] == pytest.approx(0.15 / k)
+
+
+def test_epsilon_greedy_ties_split_exploitation_mass():
+    tied = [make_metric("A", 1000, 100), make_metric("B", 1000, 100), make_metric("C", 1000, 50)]
+    probs = EpsilonGreedyBandit(tied, epsilon=0.2).allocate()
+    by_variant = dict(zip(["A", "B", "C"], probs, strict=True))
+    # A and B tie for best: each gets half of (1 - eps) plus its eps/K share.
+    assert by_variant["A"] == pytest.approx(0.8 / 2 + 0.2 / 3)
+    assert by_variant["A"] == pytest.approx(by_variant["B"])
+    assert by_variant["C"] == pytest.approx(0.2 / 3)
+
+
+def test_ucb_prioritises_unexplored_arms():
+    m = [make_metric("A", 1000, 120), make_metric("B", 0, 0)]
+    probs = UCBBandit(m, c=2.0, exploration_floor=0.1).allocate()
+    by_variant = dict(zip(["A", "B"], probs, strict=True))
+    # B has never been shown -> infinite optimistic score -> gets the top-arm mass.
+    assert by_variant["B"] == pytest.approx(0.9 + 0.1 / 2)
+    assert by_variant["A"] == pytest.approx(0.1 / 2)
+
+
+def test_thompson_allocates_proportional_to_prob_best(metrics):
+    probs = ThompsonSamplingBandit(metrics, seed=0).allocate()
+    by_variant = dict(zip(["A", "B", "C"], probs, strict=True))
+    # A (12%) and C (12%) both beat B (~8.4%); B should get the least mass.
+    assert by_variant["A"] > by_variant["B"]
+    assert by_variant["C"] > by_variant["B"]
+
+
+def test_thompson_overwhelming_evidence_concentrates_on_winner():
+    m = [make_metric("A", 100_000, 50_000), make_metric("B", 100_000, 1_000)]
+    probs = ThompsonSamplingBandit(m, seed=0).allocate()
+    by_variant = dict(zip(["A", "B"], probs, strict=True))
+    assert by_variant["A"] > 0.99
+
+
+def test_thompson_symmetric_arms_are_near_uniform():
+    m = [make_metric("A", 1000, 100), make_metric("B", 1000, 100)]
+    probs = ThompsonSamplingBandit(m, seed=0).allocate()
+    assert probs == pytest.approx([0.5, 0.5], abs=0.05)
+
+
+def test_thompson_is_reproducible_given_a_seed(metrics):
+    first = ThompsonSamplingBandit(metrics, seed=42).allocate()
+    second = ThompsonSamplingBandit(metrics, seed=42).allocate()
+    np.testing.assert_array_equal(first, second)
 
 
 def test_softmax_favors_better_variants(metrics):
