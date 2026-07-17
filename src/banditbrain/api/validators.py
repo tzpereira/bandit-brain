@@ -51,3 +51,10 @@ def validate_epsilon(value: float, field_name: str = "epsilon") -> float:
     if not isinstance(value, float) or not (0.0 <= value <= 1.0):
         raise ValueError(f"{field_name} must be a float between 0 and 1.")
     return value
+
+
+def validate_binary_reward(value: float, field_name: str = "reward") -> float:
+    """Require reward to be exactly 0.0 or 1.0 (click-equivalent; see ROADMAP non-goals)."""
+    if not isinstance(value, float) or value not in (0.0, 1.0):
+        raise ValueError(f"{field_name} must be 0.0 or 1.0.")
+    return value

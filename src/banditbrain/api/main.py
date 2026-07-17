@@ -5,9 +5,11 @@ from banditbrain.api.routes.delete.experiments import router as delete_experimen
 from banditbrain.api.routes.get.allocations import router as get_allocations_router
 from banditbrain.api.routes.get.experiments import router as get_experiments_router
 from banditbrain.api.routes.get.metrics import router as get_metrics_router
+from banditbrain.api.routes.post.decide import router as decide_router
 from banditbrain.api.routes.post.ingest import router as ingest_experiments_router
 from banditbrain.api.routes.post.login import router as login_router
 from banditbrain.api.routes.post.recommend import router as recommend_router
+from banditbrain.api.routes.post.reward import router as reward_router
 from banditbrain.api.routes.post.signup import router as signup_router
 
 app = FastAPI()
@@ -24,6 +26,8 @@ app.include_router(get_allocations_router)
 # Post routes
 app.include_router(ingest_experiments_router)
 app.include_router(recommend_router)
+app.include_router(decide_router)
+app.include_router(reward_router)
 
 # Delete routes
 app.include_router(delete_experiments_router)
