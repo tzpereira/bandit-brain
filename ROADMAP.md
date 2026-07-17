@@ -91,12 +91,12 @@ Today EG/UCB/TS hand 100% to one variant from a single draw — wrong and non-re
 
 #### 1.3 Bias controls + statistical correctness
 
-- [ ] `min_allocation` / `max_allocation` floors and caps; "protect the champion" incumbent share
-- [ ] Informative Beta priors for TS (seed from history so known-good arms start strong)
-- [ ] Wilson-score CTR intervals (replace normal-approx SE); explicit zero-impression/zero-click handling
-- [ ] Property tests (hypothesis): allocations sum to 1, respect floors/caps, permutation-equivariant
+- [x] `min_allocation` / `max_allocation` floors and caps; "protect the champion" incumbent share — water-filling projection (`project_to_floor_cap`) in `core/policies.py`, exposed via `/recommend`
+- [x] Informative Beta priors for TS (seed from history so known-good arms start strong) — `priors: dict[variant, (alpha, beta)]`, exposed via `/recommend`
+- [x] Wilson-score CTR intervals (replace normal-approx SE); explicit zero-impression/zero-click handling — `core/stats.py`; zero-impression arms now report `[0, 1]` (maximal uncertainty) instead of a silently collapsed `[0, 0]`
+- [x] Property tests (hypothesis): allocations sum to 1, respect floors/caps, permutation-equivariant — `tests/test_core_policies_properties.py` (caught a real water-filling bug pre-merge)
 
-**Phase 1 Definition of Done:** `decide → reward → learn` runs end-to-end; decisions carry propensity + policy version and are replayable; all four policies produce fractional, reproducible, floor/cap-respecting allocations; `core/` coverage > 90%. *(Ladders to bars 1, 4.)*
+**Phase 1 Definition of Done:** `decide → reward → learn` runs end-to-end; decisions carry propensity + policy version and are replayable; all four policies produce fractional, reproducible, floor/cap-respecting allocations; `core/` coverage > 90% — measured 97% (`make coverage`). *(Ladders to bars 1, 4.)* **Milestone 1 complete.**
 
 > **Milestone 1 complete =** the loop works and the core is correct. Impressive as engineering, but a skeptic can't yet see *how much better than A/B* it is. That number is the entire job of Milestone 2 — go there next.
 
