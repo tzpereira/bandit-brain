@@ -58,3 +58,10 @@ def validate_binary_reward(value: float, field_name: str = "reward") -> float:
     if not isinstance(value, float) or value not in (0.0, 1.0):
         raise ValueError(f"{field_name} must be 0.0 or 1.0.")
     return value
+
+
+def validate_allocation_bound(value: float, field_name: str) -> float:
+    """Require an allocation floor/cap to be a float in [0, 1]."""
+    if not isinstance(value, float) or not (0.0 <= value <= 1.0):
+        raise ValueError(f"{field_name} must be a float between 0 and 1.")
+    return value
