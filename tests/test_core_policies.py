@@ -54,6 +54,9 @@ def test_policy_allocations_are_valid(metrics, bandit_factory, algorithm):
     assert sum(a.allocated_pct for a in allocations) == pytest.approx(1.0)
     # Allocation is always a next-day forecast.
     assert all(a.date == "2026-01-02" for a in allocations)
+    # Every allocation batch carries the policy params it was computed with, so a
+    # served decision sampled from it can be replayed against the exact same policy version.
+    assert all(a.params is not None for a in allocations)
 
 
 @pytest.mark.parametrize(

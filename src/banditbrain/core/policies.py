@@ -56,15 +56,21 @@ class BanditPolicy(ABC):
         """Return the traffic distribution over ``self.variant_names`` (sums to 1)."""
         raise NotImplementedError
 
+    def params(self) -> dict:
+        """Policy parameters for this allocation — the 'version' a served decision is replayed against."""
+        return {}
+
     def get_allocation(self) -> list[Allocation]:
         probs = self.allocate()
         prediction_date_str = get_prediction_date(self.date)
+        params = self.params()
         return [
             Allocation(
                 experiment_name=self.experiment_name,
                 variant_name=name,
                 allocated_pct=float(pct),
                 algorithm=self.algorithm,
+                params=params,
                 date=prediction_date_str,
             )
             for name, pct in zip(self.variant_names, probs, strict=True)
@@ -100,6 +106,9 @@ class EpsilonGreedyBandit(BanditPolicy):
         assert 0.0 <= epsilon <= 1.0, "epsilon must be in [0, 1]"
         super().__init__(metrics, experiment_name=experiment_name, date=date, seed=seed)
         self.epsilon = epsilon
+
+    def params(self) -> dict:
+        return {"epsilon": self.epsilon}
 
     def allocate(self) -> np.ndarray:
         ctrs = np.array([m.ctr for m in self.metrics], dtype=float)
@@ -145,6 +154,9 @@ class UCBBandit(BanditPolicy):
         self.c = c
         self.exploration_floor = exploration_floor
         self.total_impressions = sum(m.impressions for m in metrics) + 1
+
+    def params(self) -> dict:
+        return {"c": self.c, "exploration_floor": self.exploration_floor}
 
     def allocate(self) -> np.ndarray:
         scores = np.array(
@@ -195,6 +207,9 @@ class ThompsonSamplingBandit(BanditPolicy):
         super().__init__(metrics, experiment_name=experiment_name, date=date, seed=seed)
         self.n_samples = n_samples
 
+    def params(self) -> dict:
+        return {"n_samples": self.n_samples}
+
     def allocate(self) -> np.ndarray:
         n = len(self.metrics)
         samples = np.empty((n, self.n_samples))
@@ -237,6 +252,9 @@ class SoftmaxBandit(BanditPolicy):
         assert tau > 0, "tau must be positive"
         super().__init__(metrics, experiment_name=experiment_name, date=date, seed=seed)
         self.tau = tau
+
+    def params(self) -> dict:
+        return {"tau": self.tau}
 
     @staticmethod
     def _softmax(x: np.ndarray, tau: float = 0.1) -> np.ndarray:
