@@ -1,4 +1,4 @@
-.PHONY: install up down test lint format typecheck check seed migrate
+.PHONY: install up down test coverage lint format typecheck check seed migrate
 
 install:
 	uv sync --all-extras
@@ -11,6 +11,9 @@ down:
 
 test:
 	uv run pytest
+
+coverage:
+	uv run pytest --cov=banditbrain.core --cov-report=term-missing
 
 lint:
 	uv run ruff check .
