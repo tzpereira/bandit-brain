@@ -1,4 +1,4 @@
-.PHONY: install up down test coverage lint format typecheck check seed migrate
+.PHONY: install up down test coverage lint format typecheck check seed migrate report figures
 
 install:
 	uv sync --all-extras
@@ -33,3 +33,9 @@ seed:
 
 migrate:
 	uv run alembic upgrade head
+
+report:
+	uv run python scripts/simulation_report.py
+
+figures:
+	uv run python scripts/generate_figures.py

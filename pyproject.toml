@@ -30,6 +30,9 @@ dashboard = [
     "streamlit-tags>=1.2",
     "streamlit-autorefresh>=1.0",
 ]
+simulation = [
+    "matplotlib>=3.8",
+]
 
 [dependency-groups]
 dev = [
@@ -61,7 +64,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # Long embedded Streamlit markup lines
-"dashboard/app.py" = ["E501"]
+"dashboard/pages/*.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"
