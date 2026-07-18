@@ -414,7 +414,7 @@ The project's direction is tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Contributing
 
-Issues and pull requests are welcome. Please run `make check` before opening a PR so lint, types, and tests stay green.
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Please run `make check` before opening a PR so lint, types, and tests stay green.
 
 ## License
 
