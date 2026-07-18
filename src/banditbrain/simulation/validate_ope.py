@@ -24,7 +24,7 @@ def true_value_of_fixed_policy(true_ctrs: list[float], target_probs: list[float]
     return float(np.dot(target_probs, true_ctrs))
 
 
-def check_ope_coverage(
+def run_ope_trials(
     true_ctrs: list[float],
     logging_probs: list[float],
     target_probs: list[float],
@@ -35,11 +35,10 @@ def check_ope_coverage(
     n_bootstrap: int = 300,
 ) -> dict:
     """
-    Repeat `n_trials` times: log `n_logged` decisions under `logging_probs`,
-    evaluate `target_probs` via IPS or SNIPS, and check whether the true value
-    (known exactly, since true_ctrs is ground truth) falls inside the reported
-    95% CI. Returns the empirical coverage rate and mean bias — a correctly
-    calibrated 95% CI should cover the truth in ~95% of trials.
+    Repeat `n_trials` times: log `n_logged` decisions under `logging_probs` and
+    evaluate `target_probs` via IPS or SNIPS. Returns the per-trial estimate and
+    CI bounds plus the true value — the raw material both `check_ope_coverage`'s
+    aggregate stats and the coverage figure are built from.
     """
     if estimator not in ("ips", "snips"):
         raise ValueError(f"estimator must be 'ips' or 'snips', got {estimator!r}")
@@ -51,8 +50,9 @@ def check_ope_coverage(
     target_probs_arr = np.array(target_probs)
     n_arms = len(true_ctrs)
 
-    covered = 0
-    biases = np.empty(n_trials)
+    estimates = np.empty(n_trials)
+    ci_lowers = np.empty(n_trials)
+    ci_uppers = np.empty(n_trials)
 
     for i in range(n_trials):
         arms = rng.choice(n_arms, size=n_logged, p=logging_probs_arr)
@@ -61,23 +61,49 @@ def check_ope_coverage(
         target_propensities = target_probs_arr[arms]
 
         if estimator == "ips":
-            estimate = ips_estimate(rewards, logging_propensities, target_propensities)
-            ci_lower, ci_upper = ips_confidence_interval(rewards, logging_propensities, target_propensities)
+            estimates[i] = ips_estimate(rewards, logging_propensities, target_propensities)
+            ci_lowers[i], ci_uppers[i] = ips_confidence_interval(rewards, logging_propensities, target_propensities)
         else:
-            estimate = snips_estimate(rewards, logging_propensities, target_propensities)
-            ci_lower, ci_upper = snips_confidence_interval(
+            estimates[i] = snips_estimate(rewards, logging_propensities, target_propensities)
+            ci_lowers[i], ci_uppers[i] = snips_confidence_interval(
                 rewards, logging_propensities, target_propensities, rng=rng, n_bootstrap=n_bootstrap
             )
 
-        biases[i] = estimate - true_value
-        if ci_lower <= true_value <= ci_upper:
-            covered += 1
+    return {
+        "estimator": estimator,
+        "true_value": true_value,
+        "estimates": estimates,
+        "ci_lower": ci_lowers,
+        "ci_upper": ci_uppers,
+    }
+
+
+def check_ope_coverage(
+    true_ctrs: list[float],
+    logging_probs: list[float],
+    target_probs: list[float],
+    n_logged: int,
+    n_trials: int,
+    estimator: str = "snips",
+    seed: int = 0,
+    n_bootstrap: int = 300,
+) -> dict:
+    """
+    Check whether the true value (known exactly, since true_ctrs is ground
+    truth) falls inside the reported 95% CI across `n_trials` repeated logged
+    datasets. Returns the empirical coverage rate and mean bias — a correctly
+    calibrated 95% CI should cover the truth in ~95% of trials.
+    """
+    trials = run_ope_trials(true_ctrs, logging_probs, target_probs, n_logged, n_trials, estimator, seed, n_bootstrap)
+    true_value = trials["true_value"]
+    biases = trials["estimates"] - true_value
+    covered = np.sum((trials["ci_lower"] <= true_value) & (true_value <= trials["ci_upper"]))
 
     return {
         "estimator": estimator,
         "true_value": true_value,
         "mean_bias": float(biases.mean()),
-        "coverage_rate": covered / n_trials,
+        "coverage_rate": float(covered) / n_trials,
         "n_trials": n_trials,
         "n_logged": n_logged,
     }

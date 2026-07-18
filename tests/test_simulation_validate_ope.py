@@ -1,11 +1,46 @@
 import pytest
 
-from banditbrain.simulation.validate_ope import check_ope_coverage, true_value_of_fixed_policy
+from banditbrain.simulation.validate_ope import check_ope_coverage, run_ope_trials, true_value_of_fixed_policy
 
 
 def test_true_value_is_the_dot_product_of_probs_and_ctrs():
     value = true_value_of_fixed_policy(true_ctrs=[0.2, 0.8], target_probs=[0.3, 0.7])
     assert value == pytest.approx(0.2 * 0.3 + 0.8 * 0.7)
+
+
+def test_run_ope_trials_returns_one_estimate_and_ci_per_trial():
+    trials = run_ope_trials(
+        true_ctrs=[0.3, 0.5],
+        logging_probs=[0.5, 0.5],
+        target_probs=[0.7, 0.3],
+        n_logged=500,
+        n_trials=10,
+        estimator="ips",
+        seed=0,
+    )
+    assert len(trials["estimates"]) == 10
+    assert len(trials["ci_lower"]) == 10
+    assert len(trials["ci_upper"]) == 10
+    assert all(
+        lo <= est <= hi for lo, est, hi in zip(trials["ci_lower"], trials["estimates"], trials["ci_upper"], strict=True)
+    )
+    assert trials["true_value"] == pytest.approx(0.3 * 0.7 + 0.5 * 0.3)
+
+
+def test_check_ope_coverage_is_consistent_with_run_ope_trials():
+    kwargs = dict(
+        true_ctrs=[0.3, 0.5],
+        logging_probs=[0.5, 0.5],
+        target_probs=[0.7, 0.3],
+        n_logged=500,
+        n_trials=20,
+        estimator="ips",
+        seed=0,
+    )
+    trials = run_ope_trials(**kwargs)
+    coverage = check_ope_coverage(**kwargs)
+    covered = (trials["ci_lower"] <= trials["true_value"]) & (trials["true_value"] <= trials["ci_upper"])
+    assert coverage["coverage_rate"] == pytest.approx(covered.mean())
 
 
 def test_ips_coverage_is_close_to_95_percent_with_good_overlap():
