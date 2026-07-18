@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, RootModel
 
-from banditbrain.api.jwt_auth import verify_token
+from banditbrain.api.guardrails import block_demo_writes
 from banditbrain.api.repositories.experiments import insert_experiments_batch
 from banditbrain.api.validators import (
+    validate_batch_size,
     validate_context_dict,
     validate_date_string,
     validate_non_empty_string,
@@ -13,6 +14,11 @@ from banditbrain.api.validators import (
 from banditbrain.core.models import Experiment
 
 router = APIRouter()
+
+# Guardrail for a public deployment (see ROADMAP.md Phase 4): caps how much one
+# request can write, independent of the raw byte-size limit enforced globally
+# by BodySizeLimitMiddleware.
+MAX_INGEST_BATCH_SIZE = 1000
 
 
 class IngestRequest(BaseModel):
@@ -51,13 +57,18 @@ def to_ingest_request(item):
 
 
 @router.post("/ingest", response_model=dict)
-def ingest_experiment(request: IngestBatch, user_id: int = Depends(verify_token)):
+def ingest_experiment(request: IngestBatch, user_id: int = Depends(block_demo_writes)):
     """
     Ingest one or more experiment events.
     Accepts a list of objects (array JSON).
     Uses global validators for all fields and returns HTTP 422/400 for invalid data.
     """
     try:
+        try:
+            validate_batch_size(request.root, MAX_INGEST_BATCH_SIZE, "batch")
+        except ValueError as ve:
+            raise HTTPException(status_code=413, detail=str(ve)) from ve
+
         validated = []
         errors = []
         for idx, item in enumerate(request.root):

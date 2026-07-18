@@ -1,6 +1,7 @@
 import pytest
 
-from banditbrain.api.routes.post.ingest import IngestRequest
+from banditbrain.api.routes.post.ingest import MAX_INGEST_BATCH_SIZE, IngestRequest
+from banditbrain.api.validators import validate_batch_size
 
 
 def _valid_payload(**overrides):
@@ -30,3 +31,12 @@ def test_clicks_exceeding_impressions_is_rejected():
 def test_clicks_equal_to_impressions_is_allowed():
     req = IngestRequest(**_valid_payload(impressions=10, clicks=10)).validate()
     assert req.clicks == req.impressions
+
+
+def test_batch_at_the_size_limit_is_allowed():
+    validate_batch_size([0] * MAX_INGEST_BATCH_SIZE, MAX_INGEST_BATCH_SIZE, "batch")
+
+
+def test_batch_over_the_size_limit_is_rejected():
+    with pytest.raises(ValueError, match=f"exceeds the {MAX_INGEST_BATCH_SIZE}-item limit"):
+        validate_batch_size([0] * (MAX_INGEST_BATCH_SIZE + 1), MAX_INGEST_BATCH_SIZE, "batch")

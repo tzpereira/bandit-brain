@@ -1,7 +1,8 @@
 import bcrypt
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 
+from banditbrain.api.rate_limit import limiter
 from banditbrain.api.repositories.users import create_user, get_user_by_email
 
 router = APIRouter()
@@ -13,7 +14,8 @@ class SignupRequest(BaseModel):
 
 
 @router.post("/signup")
-def signup(data: SignupRequest):
+@limiter.limit("5/minute")
+def signup(request: Request, data: SignupRequest):
     if get_user_by_email(data.email):
         raise HTTPException(status_code=400, detail="Email already registered")
 

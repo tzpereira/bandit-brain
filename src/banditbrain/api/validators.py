@@ -65,3 +65,10 @@ def validate_allocation_bound(value: float, field_name: str) -> float:
     if not isinstance(value, float) or not (0.0 <= value <= 1.0):
         raise ValueError(f"{field_name} must be a float between 0 and 1.")
     return value
+
+
+def validate_batch_size(items: list, max_size: int, field_name: str = "batch") -> list:
+    """Require a batch/list to not exceed max_size items (upload size guardrail)."""
+    if len(items) > max_size:
+        raise ValueError(f"{field_name} of {len(items)} items exceeds the {max_size}-item limit.")
+    return items
