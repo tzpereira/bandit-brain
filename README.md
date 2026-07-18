@@ -23,9 +23,89 @@ Decide how to split traffic across the variants of an online experiment using mu
 
 ---
 
+## Results
+
+All numbers below are measured, not asserted — regenerate them yourself with `make report` (text) and `make figures` (plots), or see [ROADMAP.md](ROADMAP.md) Phase 2 for the methodology. Scenario: a synthetic 3-arm environment with known true CTRs (0.030 / 0.055 / 0.038 — the same values `scripts/generate_example_data.py` uses to build the seeded demo dataset), 3,000 decisions, averaged over 50 seeds.
+
+**Every real policy beats a fixed A/B split, and Thompson Sampling wins:**
+
+![Algorithm comparison](public/figures/algorithm_comparison.png)
+
+| Algorithm | Extra clicks vs. uniform A/B/C | Final regret (95% CI) | % traffic on the true best arm |
+|---|---|---|---|
+| Thompson Sampling | **+28.28** | 15.24 `[12.58, 17.89]` | 74.3% |
+| Epsilon-greedy | +24.90 | 17.39 `[12.48, 22.29]` | 70.8% |
+| Softmax | +18.00 | 24.22 `[21.92, 26.52]` | 60.3% |
+| UCB | +4.14 | 38.10 `[37.73, 38.47]` | 39.1% |
+| Oracle (ceiling, cheats by knowing the truth) | — | 0.00 | 100.0% |
+| Uniform A/B/C (baseline) | — | 41.99 `[41.84, 42.15]` | 33.3% |
+| Fixed 90/10 toward an arbitrary control arm | worse than uniform | 69.99 `[69.89, 70.09]` | 5.1% |
+
+A fixed split can lose to plain uniform A/B if it happens to favor the wrong variant — a real, sometimes-overlooked failure mode of static "control gets 90%" splits, and the reason adaptive allocation exists.
+
+**Cumulative regret over time** (shaded = 95% CI over seeds) — the sublinear (flattening) curves are what "learning" looks like; the linear ones are what "not learning" looks like:
+
+![Regret curves](public/figures/regret_curves.png)
+
+**Off-policy evaluation recovers the known truth**, not just a plausible-looking number — 60 independent trials, each logging 2,000 decisions under a uniform logging policy and evaluating a fixed 90/10 target policy via IPS/SNIPS, checked against the analytically-exact true value:
+
+![OPE validation](public/figures/ope_validation.png)
+
+| Estimator | True value | Mean bias | 95% CI coverage (target: 95%) |
+|---|---|---|---|
+| IPS | 0.0316 | +0.00023 | 92.0% |
+| SNIPS | 0.0316 | −0.00001 | 92.5% |
+
+**Sensitivity sweep** — epsilon-greedy's `epsilon` traces the textbook exploration/exploitation trade-off (too low: stuck on an early false winner; too high: wastes traffic exploring):
+
+![Sensitivity sweep](public/figures/sensitivity_sweep.png)
+
+---
+
+## Architecture
+
+The serve → log → learn loop (Phase 1) and the off-policy evaluation it feeds (Phase 2):
+
+```mermaid
+flowchart LR
+    subgraph Explore
+        REC["POST /recommend<br/>compute the daily allocation"]
+        DEC["POST /decide<br/>sample one arm + propensity"]
+    end
+
+    subgraph Log
+        DECLOG[("decisions<br/>arm, propensity, policy version")]
+        REWLOG[("rewards<br/>outcome per decision_id")]
+    end
+
+    subgraph Learn
+        MET["GET /metrics<br/>ingested + served traffic, Wilson CI"]
+    end
+
+    subgraph Evaluate["Off-Policy Evaluation"]
+        OPE["core.ope<br/>IPS / SNIPS + CI"]
+        TRUST["trust_level<br/>audit-grade vs. best-effort"]
+    end
+
+    ING["POST /ingest<br/>batch events"] --> MET
+    REC --> DEC
+    DEC -->|decision_id, propensity| DECLOG
+    REW["POST /reward"] -->|reward, decision_id| REWLOG
+    DECLOG --> MET
+    REWLOG --> MET
+    MET --> REC
+    DECLOG --> OPE
+    REWLOG --> OPE
+    OPE --> TRUST
+```
+
+`/recommend` computes a batch allocation; `/decide` samples from it per request and logs the decision; `/reward` attributes the outcome; `/metrics` folds served traffic back in for the next `/recommend` call — that's the loop. `core.ope` evaluates logged decisions against a candidate policy independently of the loop, using the same propensities the loop already logs.
+
+---
+
 ## Installation
 
-Dependencies are managed with [uv](https://docs.astral.sh/uv/). The package is not published to PyPI — install from source.
+Dependencies are managed with [uv](https://docs.astral.sh/uv/). Source install only — this is a portfolio/learning project, not a published package, and there's no CI step that would publish it. If that changes, it'll be a straightforward `hatchling` build (already configured) pushed via a new CI job; nothing about the current layout blocks it.
 
 ```bash
 git clone https://github.com/tzpereira/bandit-brain.git
@@ -304,21 +384,23 @@ make lint        # ruff check + format --check
 make typecheck   # mypy on banditbrain.core
 make check       # lint + typecheck + test
 make seed        # load demo data into a running stack
+make report      # print the Phase 2 headline numbers (regret, OPE validation, sensitivity)
+make figures     # regenerate every plot in the Results section (public/figures/)
 ```
 
-Tests live in [tests/](tests/): `test_core_policies.py` / `test_core_policies_properties.py` (allocation correctness, incl. hypothesis property tests), `test_core_bias_controls.py` (floor/cap/champion), `test_core_stats.py` (Wilson score CI), `test_core_decide.py` (decision sampling), `test_ingest_validation.py` / `test_decide_reward_validation.py` / `test_recommend_validation.py` (request validation), `test_api_smoke.py` (routes registered + auth enforced). CI runs lint → typecheck → tests on every push and PR ([.github/workflows/ci.yml](.github/workflows/ci.yml)); `pre-commit` hooks mirror it.
+Tests live in [tests/](tests/): `test_core_policies.py` / `test_core_policies_properties.py` (allocation correctness, incl. hypothesis property tests), `test_core_bias_controls.py` (floor/cap/champion), `test_core_stats.py` (Wilson score CI), `test_core_decide.py` (decision sampling), `test_core_ope.py` (IPS/SNIPS), `test_simulation_*.py` (environment, baselines, runner, OPE validation, sensitivity sweeps), `test_ingest_validation.py` / `test_decide_reward_validation.py` / `test_recommend_validation.py` (request validation), `test_api_smoke.py` (routes registered + auth enforced). CI runs lint → typecheck → tests on every push and PR ([.github/workflows/ci.yml](.github/workflows/ci.yml)); `pre-commit` hooks mirror it.
 
 ### Project layout
 
 ```
 src/banditbrain/
-  core/          # Pure bandit engine: policies + models (numpy + pydantic only)
+  core/          # Pure bandit engine: policies, OPE, stats, models (numpy + pydantic only)
   api/           # FastAPI layer: routes, repositories, JWT auth, validators
-  simulation/    # Simulation/backtesting package (planned — currently empty)
+  simulation/    # Synthetic environment, baselines, runner, OPE validation, sensitivity sweeps
 dashboard/       # Streamlit dashboard
 migrations/      # Alembic migrations
 docker/          # Dockerfiles + entrypoints
-scripts/         # Seed + example-data + stream generators
+scripts/         # Seed, example-data, simulation report + figure generation
 tests/           # pytest suite
 ```
 
@@ -333,9 +415,3 @@ Issues and pull requests are welcome. Please run `make check` before opening a P
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
----
-
-## Open questions
-
-1. **PyPI / packaging.** Is there any intent to publish `banditbrain` to PyPI, or is source install the only supported path? The README currently assumes source-only.
