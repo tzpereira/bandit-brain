@@ -145,7 +145,7 @@ OPE done the way the field does it, and validated against a **known ground truth
 - [ ] Deploy API + dashboard + Postgres to one host (Railway / Fly.io / Render — document the choice) — deliberately deferred; deployment needs a real hosting decision/account, not something to do unprompted
 - [ ] Demo mode: seeded realistic dataset + read-only demo account — **read-only enforced** (`users.is_demo` + `api/guardrails.py::block_demo_writes`, 403 on every write/destructive route); trades off the "live `decide → reward → learn` visible" half by design — a hard-read-only account can't itself trigger `/decide`/`/reward`, so that stays a static result until Milestone 3's safe-rollout work gives a principled way to let visitors drive it without risking abuse
 - [x] Guardrails: auth rate limiting (`slowapi`, 5/min on `/signup` + `/login`), upload size caps (1,000-event batch cap + 2MB body cap), nightly demo-data reset — `scripts/reset_demo_data.py` exists and works (verified live); not yet actually scheduled since there's no deployment to schedule it against
-- [ ] Fresh demo GIF/screenshots; `CONTRIBUTING.md`; tagged `v1.0.0` with a changelog
+- [ ] Fresh demo GIF/screenshots; `CONTRIBUTING.md`; tagged `v1.0.0` with a changelog — GIF refreshed (37MB → 4.5MB, shows the current dashboard), `CONTRIBUTING.md` and `CHANGELOG.md` written; the `v1.0.0` tag itself is held until actual deployment, since Phase 4's own DoD ties "v1.0.0" to being link-clickable
 - [ ] Link from portfolio/CV with the headline metric (e.g. "−X% regret vs. A/B; OPE recovers truth within Y%")
 
 **Phase 4 Definition of Done:** from a link, an outsider interacts with the live loop and reads the (checkable) results in under two minutes.
