@@ -60,14 +60,14 @@ metrics = [
            ctr=0.084, ctr_se=0.009, ctr_ci_lower=0.066, ctr_ci_upper=0.102),
 ]
 
-bandit = ThompsonSamplingBandit(metrics, experiment_name="homepage_test", date="2026-01-01")
+bandit = ThompsonSamplingBandit(metrics, experiment_name="homepage_test", date="2026-01-01", seed=0)
 for allocation in bandit.get_allocation():
     print(allocation.variant_name, allocation.allocated_pct, allocation.date)
-# A 1.0 2026-01-02
-# B 0.0 2026-01-02
+# A 0.9938 2026-01-02
+# B 0.0062 2026-01-02
 ```
 
-Every policy exposes the same `get_allocation()` method returning a list of `Allocation` objects whose `allocated_pct` values sum to `1.0`. The allocation `date` is always the day **after** the input `date` (next-day forecast).
+Every policy exposes the same `get_allocation()` method, returning a list of `Allocation` objects whose `allocated_pct` values sum to `1.0` — a **fractional** split across every variant, not a winner-take-all pick. The allocation `date` is always the day **after** the input `date` (next-day forecast). Pass `seed=` for reproducible output (required for Thompson Sampling, which samples internally; the other three are already deterministic given the same metrics).
 
 To run the full stack instead (API + dashboard + PostgreSQL):
 
@@ -84,24 +84,24 @@ make seed                      # optional: load demo data
 
 ## Core concepts: the four policies
 
-All four take a `list[Metric]` and produce a `list[Allocation]`. They differ in how they turn observed click-through rates (CTR) into an allocation.
+All four take a `list[Metric]` and produce a `list[Allocation]` — a **fractional** distribution over every variant that sums to `1.0`, reproducible given the same metrics (and a `seed=` for Thompson Sampling). They differ in how they turn observed click-through rates (CTR) into that distribution.
 
-| Strategy | Class | Tuning param | Allocation shape | Choose it when |
-|---|---|---|---|---|
-| Epsilon-greedy | `EpsilonGreedyBandit` | `epsilon` (0–1, default 0.1) | 100% to one variant | You want the simplest exploration/exploitation knob. |
-| UCB | `UCBBandit` | `c` (>0, default 2.0) | 100% to one variant | You want exploration driven by uncertainty, not a fixed rate. |
-| Thompson sampling | `ThompsonSamplingBandit` | — | 100% to one variant | Data is sparse/uncertain and you want a Bayesian approach. |
-| Softmax | `SoftmaxBandit` | `tau` (>0, default 0.1) | Proportional across all variants | You want every variant to keep a share of traffic. |
+| Strategy | Class | Tuning param | Choose it when |
+|---|---|---|---|
+| Epsilon-greedy | `EpsilonGreedyBandit` | `epsilon` (0–1, default 0.1) | You want the simplest exploration/exploitation knob. |
+| UCB | `UCBBandit` | `c` (>0, default 2.0) | You want exploration driven by uncertainty, not a fixed rate. |
+| Thompson sampling | `ThompsonSamplingBandit` | — (optional `priors`) | Data is sparse/uncertain and you want a Bayesian approach. |
+| Softmax | `SoftmaxBandit` | `tau` (>0, default 0.1) | You want every variant's share to move smoothly with its CTR. |
 
-**Epsilon-greedy.** With probability `epsilon` it picks a variant uniformly at random (explore); otherwise it picks the one with the highest observed CTR (exploit). Simple and fast, but exploration is a fixed rate that doesn't adapt — high `epsilon` wastes traffic, low `epsilon` can lock onto a false winner early.
+**Epsilon-greedy.** Gives `(1 − epsilon)` to the empirical best CTR and spreads `epsilon` uniformly (`epsilon / K` each) across every variant — deterministic given the metrics. Ties for best split the exploitation share equally.
 
-**UCB (Upper Confidence Bound).** Scores each variant as `ctr + c * sqrt(ln(total_impressions) / impressions)` and picks the highest. Under-sampled variants get an optimism bonus, so exploration is directed at what's least certain rather than random. Variants with zero impressions are treated as maximally promising (`score = 1.0`). `c` controls how aggressively it explores.
+**UCB (Upper Confidence Bound).** Scores each variant as `ctr + c * sqrt(ln(total_impressions) / impressions)`; the top score gets `(1 − exploration_floor)`, with `exploration_floor` spread uniformly as an exploration floor. Never-shown variants get an infinite (maximally optimistic) score, so they're explored first. `c` controls how aggressively it explores.
 
-**Thompson sampling.** For each variant it draws a sample from a `Beta(1 + clicks, 1 + impressions − clicks)` posterior and picks the variant with the highest draw. Naturally balances exploration and exploitation and handles small samples gracefully, with no rate to tune. Because it samples, the choice is stochastic across calls.
+**Thompson sampling.** Estimates `P(variant is best)` via Monte Carlo (10k draws by default) over each variant's `Beta(alpha + clicks, beta + impressions − clicks)` posterior and allocates proportionally to that probability — not a single stochastic pick. Pass `priors={"A": (alpha, beta)}` to seed a variant's posterior from history (e.g. a prior experiment) instead of the uninformative `Beta(1, 1)`, so a known-good variant starts ahead of 50/50.
 
-**Softmax.** Converts CTRs into a probability distribution with a numerically stable softmax at temperature `tau` and allocates traffic proportionally: `p_i = exp(ctr_i / tau) / Σ_j exp(ctr_j / tau)`. Unlike the other three, it spreads budget across all variants. Low `tau` → close to greedy; high `tau` → close to uniform.
+**Softmax.** Converts CTRs into a probability distribution with a numerically stable softmax at temperature `tau`: `p_i = exp(ctr_i / tau) / Σ_j exp(ctr_j / tau)`. Low `tau` → close to greedy; high `tau` → close to uniform.
 
-> **Note on allocation shape:** epsilon-greedy, UCB, and Thompson sampling currently commit **100% of traffic to a single selected variant** (0% to the rest) per call. Only softmax returns a genuinely fractional split. Fractional allocation for all four is a planned change — see [ROADMAP.md](ROADMAP.md), Phase 1.
+**Bias controls (all four).** Every constructor also accepts `min_allocation`/`max_allocation` (floor/cap every variant must respect, default `0.0`/`1.0`) and `champion`/`champion_min_allocation` (guarantee an incumbent variant a minimum share while challengers are explored). These are applied *after* the policy computes its raw preference, via a water-filling projection that preserves relative preference among the unconstrained variants — see `project_to_floor_cap` in `core/policies.py`.
 
 ---
 
@@ -109,31 +109,58 @@ All four take a `list[Metric]` and produce a `list[Allocation]`. They differ in 
 
 ### Policies
 
-Each constructor takes `metrics: list[Metric]`, plus `experiment_name: str = ""` and `date: str | None = None` (used to stamp the output; `None`/`""` means today). `get_allocation()` returns `list[Allocation]`.
+Every constructor takes `metrics: list[Metric]`, plus keyword-only `experiment_name: str = ""`, `date: str | None = None` (stamps the output; `None`/`""` means today), `seed: int | None = None`, and the bias-control kwargs (`min_allocation`, `max_allocation`, `champion`, `champion_min_allocation`). `get_allocation()` returns `list[Allocation]`; `allocate()` returns the raw `numpy.ndarray` distribution before bias controls are applied.
 
 ```python
-EpsilonGreedyBandit(metrics, epsilon=0.1, experiment_name="", date=None)
-UCBBandit(metrics, c=2.0, experiment_name="", date=None)
-ThompsonSamplingBandit(metrics, experiment_name="", date=None)
-SoftmaxBandit(metrics, tau=0.1, experiment_name="", date=None)
+EpsilonGreedyBandit(metrics, epsilon=0.1, *, experiment_name="", date=None, seed=None, **bias_controls)
+UCBBandit(metrics, c=2.0, *, exploration_floor=0.1, experiment_name="", date=None, seed=None, **bias_controls)
+ThompsonSamplingBandit(metrics, *, n_samples=10_000, priors=None, experiment_name="", date=None, seed=None, **bias_controls)
+SoftmaxBandit(metrics, tau=0.1, *, experiment_name="", date=None, seed=None, **bias_controls)
 ```
-
-`EpsilonGreedyBandit`, `UCBBandit`, and `ThompsonSamplingBandit` also expose `select() -> str`, which returns the chosen variant name without building `Allocation` objects.
 
 ```python
-from banditbrain.core.policies import UCBBandit
+from banditbrain.core.policies import ThompsonSamplingBandit
 
-bandit = UCBBandit(metrics, c=1.5, experiment_name="pricing")
-winner = bandit.select()                 # -> "A"
-allocation = bandit.get_allocation()     # -> [Allocation(...), ...]
+# Protect a losing incumbent at 20% while a new challenger seeded with strong
+# prior history (80% historical CTR) competes for the rest.
+bandit = ThompsonSamplingBandit(
+    metrics,
+    seed=0,
+    champion="B", champion_min_allocation=0.2,
+    priors={"A": (800.0, 200.0)},
+)
+allocations = bandit.get_allocation()   # -> [Allocation(...), ...], sums to 1.0
 ```
+
+### Sampling a single decision (`banditbrain.core.decide`)
+
+`sample_decision` draws one arm from a stored `Allocation` batch and reports its propensity — the "Rank" half of the serve/log/learn loop the HTTP API's `/decide` endpoint runs on.
+
+```python
+from banditbrain.core.decide import sample_decision
+
+variant_name, propensity = sample_decision(allocations)   # propensity = P(chosen arm | state)
+```
+
+### CTR statistics (`banditbrain.core.stats`)
+
+```python
+from banditbrain.core.stats import wilson_score_interval, standard_error
+
+wilson_score_interval(clicks=120, impressions=1000)   # -> (ci_lower, ci_upper)
+wilson_score_interval(clicks=0, impressions=0)        # -> (0.0, 1.0), not a false (0.0, 0.0)
+```
+
+Used instead of the normal approximation because it stays well-behaved for zero clicks and is defined at zero impressions — see [ROADMAP.md](ROADMAP.md) Phase 1.3.
 
 ### Models (`banditbrain.core.models`)
 
 Pydantic models used across the engine.
 
 - **`Metric`** — one variant's aggregated stats: `variant_name`, `clicks`, `impressions`, `total_cost`, `device`, `location`, `user_segment`, `ctr`, `ctr_se`, `ctr_ci_lower`, `ctr_ci_upper`, plus optional `cpc`/`cpv`. This is the input to every policy.
-- **`Allocation`** — one variant's recommended share: `experiment_name`, `variant_name`, `allocated_pct`, `algorithm` (`"eg"`, `"ucb"`, `"ts"`, `"softmax"`), `date`. The output of every policy.
+- **`Allocation`** — one variant's recommended share: `experiment_name`, `variant_name`, `allocated_pct`, `algorithm` (`"eg"`, `"ucb"`, `"ts"`, `"softmax"`), `params` (the policy's hyperparameters for this batch — its "version"), `date`. The output of every policy.
+- **`Decision`** — one served decision: `decision_id`, `experiment_name`, `variant_name`, `propensity`, `decision_source` (`"served"` | `"byo"`), `algorithm`, `policy_params`, `allocation_date`. Logged by `POST /decide`.
+- **`Reward`** — an outcome attributed to a decision: `decision_id`, `reward` (binary, `0.0`/`1.0`). Logged by `POST /reward`.
 - **`Experiment`** — a raw ingested event: `experiment_name`, `variant_name`, `impressions`, `clicks`, `cost`, `event_date`, optional `context`.
 
 ### Helper (`banditbrain.core.dates`)
@@ -155,15 +182,19 @@ The FastAPI service wraps the core engine, persists to PostgreSQL, and gates eve
 |---|---|---|
 | POST | `/signup` | Create an account (`email`, `password`). |
 | POST | `/login` | Exchange credentials for a JWT access token. |
-| POST | `/ingest` | Ingest a JSON **array** of experiment events. |
-| POST | `/recommend` | Run a policy over stored metrics and persist + return allocations. |
+| POST | `/ingest` | Ingest a JSON **array** of experiment events (batch). |
+| POST | `/recommend` | Run a policy over stored metrics and persist + return the day's allocation batch. |
+| POST | `/decide` | Sample one arm from the latest allocation batch; logs the decision (propensity, policy version, provenance). |
+| POST | `/reward` | Attribute a binary outcome to a `decision_id` logged by `/decide`. |
 | GET | `/experiments` | List ingested events. Filters: `experiment_name`, `date`, `limit`. |
-| GET | `/metrics` | Aggregated per-variant metrics. Filters: `experiment_name`, `date`, `group_by_context`. |
+| GET | `/metrics` | Aggregated per-variant metrics — folds in served `/decide` + `/reward` traffic alongside ingested data. Filters: `experiment_name`, `date`, `group_by_context`. |
 | GET | `/allocations` | List persisted allocations. Filters: `experiment_name`, `date`, `algorithm`, `limit`. |
 | DELETE | `/experiments` | Delete the caller's experiment records (204, no payload). |
 | DELETE | `/allocations` | Delete the caller's allocation records (204, no payload). |
 
-**`POST /recommend` body** — `method` selects the policy; only the matching param is used:
+`/recommend` and `/decide` together are the **serve → log → learn loop**: `/recommend` computes a batch allocation once (e.g. daily); `/decide` samples from it per-request and logs the decision; `/reward` reports the outcome; the next `/recommend` call sees that served traffic in its metrics. See [ROADMAP.md](ROADMAP.md) Phase 1.2 for the design rationale.
+
+**`POST /recommend` body** — `method` selects the policy; only the matching param is used. Bias-control and `priors` fields are all optional:
 
 ```json
 {
@@ -172,11 +203,45 @@ The FastAPI service wraps the core engine, persists to PostgreSQL, and gates eve
   "epsilon": 0.1,
   "c": 2.0,
   "tau": 0.1,
-  "date": "2026-01-01"
+  "date": "2026-01-01",
+  "min_allocation": 0.05,
+  "max_allocation": 0.9,
+  "champion": "A",
+  "champion_min_allocation": 0.2,
+  "priors": {"B": [800.0, 200.0]}
 }
 ```
 
-Validation: `method` ∈ `{eg, ucb, ts, softmax}`, `epsilon` ∈ `[0, 1]`, `c`/`tau` ≥ 0. The response is a list of `Allocation` objects dated the next day. Interactive docs are served at `/docs`.
+Validation: `method` ∈ `{eg, ucb, ts, softmax}`, `epsilon` ∈ `[0, 1]`, `c`/`tau` ≥ 0, `min_allocation`/`max_allocation`/`champion_min_allocation` ∈ `[0, 1]` with `min_allocation ≤ max_allocation`. The response is a list of `Allocation` objects dated the next day. Interactive docs are served at `/docs`.
+
+**`POST /decide` body / response:**
+
+```json
+// request
+{"experiment_name": "homepage_test", "algorithm": "ts"}
+
+// response
+{
+  "decision_id": "b4aaedfd-2940-4080-981e-111723fbf319",
+  "experiment_name": "homepage_test",
+  "variant_name": "A",
+  "propensity": 0.92,
+  "decision_source": "served",
+  "algorithm": "ts",
+  "policy_params": {"n_samples": 10000, "priors": {}},
+  "allocation_date": "2026-01-02"
+}
+```
+
+Returns 404 if no allocation batch exists yet for that experiment/algorithm (call `/recommend` first). Latency budget: p99 < 50ms — it samples from an already-computed allocation rather than recomputing a policy per request (measured locally: p50 8.5ms / p95 13.4ms / p99 14.5ms over 200 requests).
+
+**`POST /reward` body:**
+
+```json
+{"decision_id": "b4aaedfd-2940-4080-981e-111723fbf319", "reward": 1.0}
+```
+
+`reward` must be `0.0` or `1.0` (click-equivalent; continuous/monetary reward is out of scope, see [ROADMAP.md](ROADMAP.md) non-goals). Returns 404 for an unknown `decision_id`, 409 if that decision already has a reward recorded — at most one reward per decision.
 
 **`POST /ingest` body** — an array; `clicks` must not exceed `impressions`:
 
@@ -234,13 +299,14 @@ Database schema changes are managed with Alembic ([migrations/](migrations/)) an
 ```bash
 make install     # uv sync --all-extras
 make test        # uv run pytest
+make coverage    # pytest --cov=banditbrain.core (currently 97%)
 make lint        # ruff check + format --check
 make typecheck   # mypy on banditbrain.core
 make check       # lint + typecheck + test
 make seed        # load demo data into a running stack
 ```
 
-Tests live in [tests/](tests/): `test_core_policies.py` (allocation correctness), `test_ingest_validation.py` (ingest rules), `test_api_smoke.py` (routes registered + auth enforced). CI runs lint → typecheck → tests on every push and PR ([.github/workflows/ci.yml](.github/workflows/ci.yml)); `pre-commit` hooks mirror it.
+Tests live in [tests/](tests/): `test_core_policies.py` / `test_core_policies_properties.py` (allocation correctness, incl. hypothesis property tests), `test_core_bias_controls.py` (floor/cap/champion), `test_core_stats.py` (Wilson score CI), `test_core_decide.py` (decision sampling), `test_ingest_validation.py` / `test_decide_reward_validation.py` / `test_recommend_validation.py` (request validation), `test_api_smoke.py` (routes registered + auth enforced). CI runs lint → typecheck → tests on every push and PR ([.github/workflows/ci.yml](.github/workflows/ci.yml)); `pre-commit` hooks mirror it.
 
 ### Project layout
 
@@ -272,8 +338,4 @@ MIT — see [LICENSE](LICENSE).
 
 ## Open questions
 
-A few things in the code are ambiguous; flagging rather than guessing:
-
-1. **All-or-nothing allocation.** EG/UCB/TS return 100% to a single variant per call, and Thompson sampling is stochastic (different variant across calls on the same data). Should the README present this as the intended production behavior, or lead with it as a known limitation (as [ROADMAP.md](ROADMAP.md) Phase 1 frames it)?
-2. **`select()` asymmetry.** `SoftmaxBandit` has no `select()` method while the other three do. Is that intentional, or should the API be uniform?
-3. **PyPI / packaging.** Is there any intent to publish `banditbrain` to PyPI, or is source install the only supported path? The README currently assumes source-only.
+1. **PyPI / packaging.** Is there any intent to publish `banditbrain` to PyPI, or is source install the only supported path? The README currently assumes source-only.
