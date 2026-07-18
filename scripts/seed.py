@@ -7,7 +7,13 @@ Usage (with `docker compose up` running):
 Environment:
     SEED_API_URL    API base URL (default: http://localhost:8000)
     SEED_EMAIL      demo account email (default: demo@banditbrain.dev)
-    SEED_PASSWORD   demo account password (default: demo-password)
+    SEED_PASSWORD   demo account password. Defaults to "demo-password" only when
+                    SEED_API_URL looks local; required (no fallback) otherwise, so a
+                    publicly-known password can't accidentally end up protecting a
+                    real deployment.
+    SEED_SECRET     must match the API's DEMO_SEED_SECRET if the target account is
+                    flagged is_demo (read-only) - otherwise /ingest returns 403.
+                    Irrelevant for a normal (non-demo) account.
 """
 
 import csv
@@ -20,19 +26,21 @@ import httpx
 
 API_URL = os.getenv("SEED_API_URL", "http://localhost:8000")
 EMAIL = os.getenv("SEED_EMAIL", "demo@banditbrain.dev")
-PASSWORD = os.getenv("SEED_PASSWORD", "demo-password")
+PASSWORD = os.getenv("SEED_PASSWORD")
+SEED_SECRET = os.getenv("SEED_SECRET")
 EXPERIMENT_NAME = "example_ads"
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "backend", "0.0.0.0")
 CSV_PATH = Path(__file__).resolve().parent.parent / "public" / "example_ads_data.csv"
 BATCH_SIZE = 200
 DAYS_OF_HISTORY = 14
 
 
-def get_token(client: httpx.Client) -> str:
-    signup = client.post(f"{API_URL}/signup", json={"email": EMAIL, "password": PASSWORD})
+def get_token(client: httpx.Client, password: str) -> str:
+    signup = client.post(f"{API_URL}/signup", json={"email": EMAIL, "password": password})
     if signup.status_code not in (200, 201, 400, 409):
         signup.raise_for_status()
 
-    login = client.post(f"{API_URL}/login", json={"email": EMAIL, "password": PASSWORD})
+    login = client.post(f"{API_URL}/login", json={"email": EMAIL, "password": password})
     login.raise_for_status()
     return login.json()["access_token"]
 
@@ -62,16 +70,33 @@ def load_events() -> list[dict]:
     return events
 
 
+def resolve_password() -> str:
+    if PASSWORD:
+        return PASSWORD
+    is_local = any(host in API_URL for host in _LOCAL_HOSTS)
+    if is_local:
+        return "demo-password"
+    print(
+        f"SEED_PASSWORD is not set and {API_URL!r} doesn't look local. Refusing to seed a "
+        "non-local target with a publicly-known default password. Set SEED_PASSWORD explicitly.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+
 def main() -> int:
+    password = resolve_password()
     with httpx.Client(timeout=30) as client:
         try:
-            token = get_token(client)
+            token = get_token(client, password)
         except httpx.HTTPError as exc:
             print(f"Could not authenticate against {API_URL}: {exc}", file=sys.stderr)
             print("Is the stack running? Try: docker compose up -d", file=sys.stderr)
             return 1
 
         headers = {"Authorization": f"Bearer {token}"}
+        if SEED_SECRET:
+            headers["X-Seed-Secret"] = SEED_SECRET
         events = load_events()
         for start in range(0, len(events), BATCH_SIZE):
             batch = events[start : start + BATCH_SIZE]
@@ -79,7 +104,7 @@ def main() -> int:
             response.raise_for_status()
             print(f"Ingested {min(start + BATCH_SIZE, len(events))}/{len(events)} events")
 
-    print(f"Done. Demo account: {EMAIL} / {PASSWORD} — experiment '{EXPERIMENT_NAME}'")
+    print(f"Done. Demo account: {EMAIL} / {password} — experiment '{EXPERIMENT_NAME}'")
     return 0
 
 
