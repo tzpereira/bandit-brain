@@ -129,14 +129,14 @@ OPE done the way the field does it, and validated against a **known ground truth
 
 ### Phase 3 — Reproducible results + local polish *(make the value legible)*
 
-- [ ] `notebooks/` (or a script) with the narrative: problem → method → results
-- [ ] **One command regenerates every headline figure** (regret curves, OPE validation, algorithm comparison)
-- [ ] **README "Results" section**: lead with plots + a table (algorithm × environment → regret vs. A/B, OPE recovery), then architecture, then quickstart
-- [ ] Architecture diagram (mermaid): the explore-log-learn loop + OPE
-- [ ] Split the 600-line `dashboard/app.py` into pages/modules; add an OPE/results page
-- [ ] Answer the README's open questions (allocation shape, `select()` asymmetry, packaging)
+- [x] `notebooks/` (or a script) with the narrative: problem → method → results — `scripts/simulation_report.py` (text) + `scripts/generate_figures.py` (plots), sharing config via `simulation/demo.py`
+- [x] **One command regenerates every headline figure** (regret curves, OPE validation, algorithm comparison) — `make figures`; also added a sensitivity-sweep figure
+- [x] **README "Results" section**: lead with plots + a table (algorithm × environment → regret vs. A/B, OPE recovery), then architecture, then quickstart — inserted right after "Why / when to use it"
+- [x] Architecture diagram (mermaid): the explore-log-learn loop + OPE
+- [x] Split the 600-line `dashboard/app.py` into pages/modules; add an OPE/results page — `config.py`/`session.py`/`api_client.py`/`simulate.py`/`charts.py` + `pages/1_🧪_Experiment.py`/`pages/2_📊_Results.py`; verified live via Playwright (login, both pages, a real simulate-and-chart run)
+- [x] Answer the README's open questions (allocation shape, `select()` asymmetry, packaging) — first two were resolved by the Phase 1 refactor; packaging answered inline in Installation, "Open questions" section removed
 
-**Phase 3 Definition of Done:** an unfamiliar dev goes from README to understanding the results and running the figures in ~10 minutes; every figure reproducible from a clean clone.
+**Phase 3 Definition of Done:** an unfamiliar dev goes from README to understanding the results and running the figures in ~10 minutes; every figure reproducible from a clean clone. *(`make figures` takes ~100s.)*
 
 ---
 
