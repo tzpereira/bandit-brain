@@ -113,17 +113,17 @@ OPE done the way the field does it, and validated against a **known ground truth
 
 #### 2.1 Off-policy evaluation (core estimators)
 
-- [ ] **IPS** and **SNIPS** (self-normalized) estimators in `core/`, using logged propensities
-- [ ] Confidence intervals on every estimate; report **effective sample size** and **propensity overlap** as reliability diagnostics
-- [ ] **Provenance-aware trust:** audit-grade for `served`/known-propensity; explicitly *best-effort / biased* for `unlabeled`
+- [x] **IPS** and **SNIPS** (self-normalized) estimators in `core/`, using logged propensities — `core/ope.py`
+- [x] Confidence intervals on every estimate; report **effective sample size** and **propensity overlap** as reliability diagnostics
+- [x] **Provenance-aware trust:** audit-grade for `served`/known-propensity; explicitly *best-effort / biased* for `unlabeled` — `core.ope.trust_level`
 
 #### 2.2 Prove the ruler isn't crooked (known ground truth)
 
-- [ ] Synthetic Bernoulli environment with **known ground truth**, seedable; show IPS/SNIPS recover the true value (bias ≈ 0) with **correct CI coverage**
-- [ ] Baselines: uniform A/B, oracle (always-best), fixed 90/10; **regret curves (mean ± CI over seeds)**; % traffic on true best arm; **extra clicks / saved cost vs. A/B** — this is the headline number
-- [ ] Sensitivity sweeps over `epsilon`, `c`, `tau`, priors; with/without bias controls
+- [x] Synthetic Bernoulli environment with **known ground truth**, seedable; show IPS/SNIPS recover the true value (bias ≈ 0) with **correct CI coverage** — `simulation/environment.py` + `simulation/validate_ope.py`. Measured (`scripts/simulation_report.py`): IPS bias +0.00023, coverage 92.0%; SNIPS bias −0.00001, coverage 92.5% (target 95%, 200 trials × 2,000 logged decisions)
+- [x] Baselines: uniform A/B, oracle (always-best), fixed 90/10; **regret curves (mean ± CI over seeds)**; % traffic on true best arm; **extra clicks / saved cost vs. A/B** — this is the headline number — `simulation/baselines.py` + `simulation/runner.py`. Measured over 3,000 decisions × 50 seeds: Thompson Sampling **+28.28 extra clicks vs. uniform A/B/C** (74.3% traffic on the true best arm vs. 33.3% for uniform); epsilon-greedy +24.90; softmax +18.00; UCB +4.14
+- [x] Sensitivity sweeps over `epsilon`, `c`, `tau`, priors; with/without bias controls — `simulation/sensitivity.py`. Epsilon sweep shows the textbook U-shaped regret curve (0.01→28.14, 0.1→17.39 minimum, 0.5→23.01)
 
-**Phase 2 Definition of Done:** on a seeded known-truth environment, OPE recovers the true value with correct coverage, and the simulation yields a defensible headline number (regret vs A/B, extra clicks/saved cost). *(Ladders to bar 2.)*
+**Phase 2 Definition of Done:** on a seeded known-truth environment, OPE recovers the true value with correct coverage, and the simulation yields a defensible headline number (regret vs A/B, extra clicks/saved cost). *(Ladders to bar 2.)* Reproduce with `uv run python scripts/simulation_report.py`.
 
 ---
 
