@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 
-from banditbrain.api.jwt_auth import verify_token
+from banditbrain.api.guardrails import block_demo_writes
 from banditbrain.api.repositories.allocations import get_latest_allocation_batch
 from banditbrain.api.repositories.decisions import insert_decision
 from banditbrain.api.validators import validate_algorithm, validate_non_empty_string
@@ -24,7 +24,7 @@ class DecideRequest(BaseModel):
 
 
 @router.post("/decide", response_model=Decision)
-def decide(request: DecideRequest = Body(...), user_id: int = Depends(verify_token)):
+def decide(request: DecideRequest = Body(...), user_id: int = Depends(block_demo_writes)):
     """
     Sample one arm from the most recently computed allocation for an experiment +
     algorithm (the "Rank" half of the serve/log/learn loop). Logs the decision with

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 
-from banditbrain.api.jwt_auth import verify_token
+from banditbrain.api.guardrails import block_demo_writes
 from banditbrain.api.repositories.decisions import get_decision
 from banditbrain.api.repositories.rewards import DuplicateRewardError, insert_reward
 from banditbrain.api.validators import validate_binary_reward, validate_non_empty_string
@@ -21,7 +21,7 @@ class RewardRequest(BaseModel):
 
 
 @router.post("/reward", response_model=Reward)
-def report_reward(request: RewardRequest = Body(...), user_id: int = Depends(verify_token)):
+def report_reward(request: RewardRequest = Body(...), user_id: int = Depends(block_demo_writes)):
     """
     Attribute an outcome to a decision_id logged by a prior POST /decide call —
     the "Reward" half of the serve/log/learn loop. At most one reward per decision.

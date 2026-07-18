@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from banditbrain.api.jwt_auth import verify_token
+from banditbrain.api.guardrails import block_demo_writes
 from banditbrain.api.repositories.experiments import delete_experiments
 
 router = APIRouter()
 
 
 @router.delete("/experiments", status_code=status.HTTP_204_NO_CONTENT)
-def delete_experiments_route(user_id: int = Depends(verify_token)):
+def delete_experiments_route(user_id: int = Depends(block_demo_writes)):
     """
     Delete experiments records from the database.
     """

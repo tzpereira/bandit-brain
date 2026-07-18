@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 
-from banditbrain.api.jwt_auth import verify_token
+from banditbrain.api.guardrails import block_demo_writes
 from banditbrain.api.repositories.allocations import insert_allocations_batch
 from banditbrain.api.repositories.experiments import get_experiments_metrics
 from banditbrain.api.validators import (
@@ -75,7 +75,7 @@ class RecommendRequest(BaseModel):
 
 
 @router.post("/recommend", response_model=list[Allocation])
-def recommend_allocation(request: RecommendRequest = Body(...), user_id: int = Depends(verify_token)):
+def recommend_allocation(request: RecommendRequest = Body(...), user_id: int = Depends(block_demo_writes)):
     """
     Returns recommended allocation for experiment variants using the chosen algorithm.
     """

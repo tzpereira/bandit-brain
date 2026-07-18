@@ -6,3 +6,4 @@ class User(BaseModel):
     email: str
     password: str
     created_at: str
+    is_demo: bool = False
