@@ -359,8 +359,12 @@ The API and dashboard read the following environment variables (see [.env.exampl
 | `HASH_SECRET_KEY` | API | Secret for signing JWTs. |
 | `HASH_ALGORITHM` | API | JWT algorithm (e.g. `HS256`). |
 | `HASH_TOKEN_EXPIRE_MINUTES` | API | Token lifetime in minutes. |
+| `DEMO_SEED_SECRET` | API | If set, a user flagged `is_demo` (read-only) accepts writes when the request carries a matching `X-Seed-Secret` header — used only by `scripts/seed.py` / `scripts/reset_demo_data.py`. Unset by default, so a demo account is unconditionally read-only. |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | db | PostgreSQL bootstrap credentials. |
 | `API_URL` | dashboard | Base URL the dashboard calls. |
+| `SEED_API_URL` / `SEED_EMAIL` / `SEED_PASSWORD` / `SEED_SECRET` | `scripts/seed.py`, `scripts/reset_demo_data.py` | Target and credentials for seeding/resetting demo data. `SEED_PASSWORD` is required (no fallback) unless `SEED_API_URL` looks local. |
+
+**Guardrails** for a public deployment (see [ROADMAP.md](ROADMAP.md) Phase 4): `/signup` and `/login` are rate-limited to 5 requests/minute per IP; `POST /ingest` caps batches at 1,000 events; every request body is capped at 2MB; a user flagged `is_demo` gets 403 on every write/destructive route (`/ingest`, `/recommend`, `/decide`, `/reward`, `DELETE /experiments`, `DELETE /allocations`) — reads stay open so a demo visitor can still explore.
 
 **Policy hyperparameters** are passed per request/call, not via env:
 
